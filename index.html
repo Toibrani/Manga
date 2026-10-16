@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Manga FR - Gemini</title>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#FAF8F3;--ink:#16141A;--mut:#6D6874;--card:#fff;--line:#16141A;--acc:#E5195E;--on:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15131A;--ink:#F4F1F8;--mut:#A39DB0;--card:#211E29;--line:#F4F1F8;--acc:#FF4D86;--on:#15131A}}
+:root[data-theme="dark"]{--bg:#15131A;--ink:#F4F1F8;--mut:#A39DB0;--card:#211E29;--line:#F4F1F8;--acc:#FF4D86;--on:#15131A}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:600px;margin:0 auto;padding:20px 16px 48px}
+h1{font-family:Bangers,Impact,sans-serif;font-size:2.4rem;letter-spacing:.04em;margin:0;font-weight:400}
+.mut{color:var(--mut);font-size:.92rem}
+.card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:14px;margin:14px 0}
+.drop{display:block;text-align:center;border:2.5px dashed var(--line);border-radius:16px;padding:26px 14px;cursor:pointer;font-weight:700}
+.btn{width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;background:var(--acc);color:var(--on);font:inherit;font-weight:800;cursor:pointer;margin-top:10px}
+.btn.alt{background:transparent;color:var(--ink)}
+.btn:disabled{opacity:.5}
+select,input[type=number],input[type=password],input[type=text]{font:inherit;padding:11px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--ink);width:100%}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label.c{display:flex;gap:10px;align-items:center;margin-top:12px}
+button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within{outline:3px solid var(--acc);outline-offset:2px}
+#out img{display:block;width:100%;border:2px solid var(--line);border-radius:6px;margin:12px 0}
+.st{font-weight:700;margin-top:8px}
+.row{display:flex;gap:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>MANGA FR</h1>
+<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini.</p>
+
+<div class="card">
+<div class="mut">Clé API Gemini</div>
+<div class="row" style="margin-top:6px">
+<input id="apikey" type="password" placeholder="AIzaSy...">
+<button class="btn alt" id="tkey" style="width:auto;margin-top:0;padding:0 14px">Voir</button>
+</div>
+<div class="mut" style="font-size:.8rem;margin-top:4px">Sauvegardée seulement sur cet appareil.</div>
+</div>
+
+<label class="drop" for="f"><span id="fl">Choisir un PDF ou des images</span><br><span class="mut">Un PDF, ou plusieurs images</span></label>
+<input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
+<div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
+<div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
+<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-2.5-flash">Gemini 2.5 Flash (meilleure qualité)</option><option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (plus rapide, plus de pages gratuites)</option></select></div>
+<label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
+<button class="btn" id="go" disabled>Traduire</button>
+<button class="btn alt" id="stop" hidden>Arrêter</button>
+<div class="st" id="st"></div>
+<div id="out"></div>
+<button class="btn" id="dl" hidden>Télécharger en PDF</button>
+<p class="mut" id="msg"></p>
+</main>
+<script>
+function $(i){return document.getElementById(i)}
+var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,FONT='700 20px "Comic Neue"';
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function say(t){$('msg').textContent=t||''}
+
+// Clé API stockée localement
+try{if(localStorage.getItem('gemini_key'))$('apikey').value=localStorage.getItem('gemini_key')}catch(e){}
+$('apikey').oninput=function(){try{localStorage.setItem('gemini_key',this.value.trim())}catch(e){}};
+$('tkey').onclick=function(){$('apikey').type=$('apikey').type==='password'?'text':'password';this.textContent=$('apikey').type==='password'?'Voir':'Cacher'};
+
+try{pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'}catch(e){}
+
+function setGo(){$('go').textContent=pending?'Reprendre':'Traduire'}
+$('f').onchange=async function(e){
+var a=Array.prototype.slice.call(e.target.files);pdfDoc=null;imgs=[];res=[];fails=[];pending=null;setGo();$('out').innerHTML='';$('dl').hidden=true;$('rg').hidden=true;say('');$('st').textContent='';
+if(!a.length){$('go').disabled=true;return}
+var pf=a.filter(function(x){return x.type==='application/pdf'||/\.pdf$/i.test(x.name)})[0];
+if(pf){try{pdfDoc=await pdfjsLib.getDocument({data:await pf.arrayBuffer()}).promise;var n=pdfDoc.numPages;$('p1').value=1;$('p2').value=Math.min(5,n);$('p1').max=$('p2').max=n;$('pn').textContent='Ce PDF a '+n+' pages. Tu peux tout traduire : mets la dernière page dans « À la page ».';$('rg').hidden=false;$('fl').textContent=pf.name}catch(x){say('Impossible de lire ce PDF.');pdfDoc=null}}
+else{imgs=a.sort(function(x,y){return x.name<y.name?-1:1});$('fl').textContent=imgs.length+' image'+(imgs.length>1?'s':'')}
+$('go').disabled=!(pdfDoc||imgs.length)};
+
+function blobOf(c){return new Promise(function(r){c.toBlob(r,'image/jpeg',.85)})}
+async function pageCanvas(p){var pg=await pdfDoc.getPage(p),v0=pg.getViewport({scale:1}),v=pg.getViewport({scale:Math.min(2.5,1300/v0.width)}),c=document.createElement('canvas');c.width=Math.round(v.width);c.height=Math.round(v.height);await pg.render({canvasContext:c.getContext('2d'),viewport:v}).promise;return[c]}
+async function imgCanvases(f){var b=await createImageBitmap(f),sc=Math.min(1,1300/b.width),w=Math.round(b.width*sc),H=Math.round(b.height*sc),sh=Math.round(w*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
+for(var i=0;i<n;i++){var h=Math.min(sh,H-i*sh),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(b,0,i*sh/sc,b.width,h/sc,0,0,w,h);o.push(c)}return o}
+
+function parse(t){var m=t.match(/\[[\s\S]*\]/);if(!m)return[];try{var a=JSON.parse(m[0]);return Array.isArray(a)?a:[]}catch(e){return[]}}
+
+function median(ctx,x,y,w,h){x=Math.max(0,Math.floor(x));y=Math.max(0,Math.floor(y));w=Math.max(2,Math.min(ctx.canvas.width-x,Math.ceil(w)));h=Math.max(2,Math.min(ctx.canvas.height-y,Math.ceil(h)));var d=ctx.getImageData(x,y,w,h).data,p=[];
+function add(i,j){var k=(j*w+i)*4;p.push([d[k],d[k+1],d[k+2],.3*d[k]+.59*d[k+1]+.11*d[k+2]])}
+for(var i=0;i<w;i++){add(i,0);add(i,h-1);if(h>3){add(i,1);add(i,h-2)}}for(var j=0;j<h;j++){add(0,j);add(w-1,j);if(w>3){add(1,j);add(w-2,j)}}
+p.sort(function(a,b){return a[3]-b[3]});return p[Math.floor(p.length/2)]}
+
+function wrap(ctx,t,mw){var ws=t.split(/\s+/),L=[],cur='';ws.forEach(function(w){var s=cur?cur+' '+w:w;if(cur&&ctx.measureText(s).width>mw){L.push(cur);cur=w}else cur=s});if(cur)L.push(cur);return L}
+function fit(ctx,t,w,h){var s=Math.min(Math.round(h),72),L=[t];for(;s>=10;s--){ctx.font='700 '+s+'px "Comic Neue","Comic Sans MS",sans-serif';L=wrap(ctx,t,w);if(L.length*s*1.12<=h)return{s:s,L:L}}ctx.font='700 10px "Comic Neue","Comic Sans MS",sans-serif';return{s:10,L:wrap(ctx,t,w)}}
+
+// CORRECTION : Gemini renvoie les rectangles au format [ymin, xmin, ymax, xmax] (0 à 1000)
+function paint(c,arr){var ctx=c.getContext('2d'),W=c.width,H=c.height,pad=Math.round(W*[.002,.005,.01][+$('mg').value]),up=$('up').checked;
+arr.forEach(function(it){var bx=it&&(it.box||it.box_2d);if(!bx||bx.length<4||!it.fr)return;var b=bx.map(Number),x1=b[1]/1000*W-pad,y1=b[0]/1000*H-pad,x2=b[3]/1000*W+pad,y2=b[2]/1000*H+pad;if(!(x2>x1+4&&y2>y1+4))return;
+var col=median(ctx,x1-3,y1-3,x2-x1+6,y2-y1+6);ctx.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';ctx.fillRect(x1,y1,x2-x1,y2-y1);
+var t=up?String(it.fr).toUpperCase():String(it.fr),f=fit(ctx,t,(x2-x1)*1.0,y2-y1),lh=f.s*1.12;ctx.fillStyle=col[3]>128?'#111':'#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+f.L.forEach(function(l,i){ctx.fillText(l,(x1+x2)/2,(y1+y2)/2-(f.L.length-1)*lh/2+i*lh)})});
+return c.toDataURL('image/jpeg',.88)}
+
+var PR='Tu es traducteur professionnel de mangas et webtoons. Repère chaque bulle de dialogue, pensée et cartouche de narration contenant du texte. Langue d’origine : {L}. Ignore les onomatopées dessinées, les signatures et les filigranes. Pour chaque texte, donne le rectangle qui entoure uniquement les lignes de texte (pas le contour de la bulle), en coordonnées de 0 à 1000 par rapport à la hauteur et à la largeur de l’image, dans cet ordre : [ymin,xmin,ymax,xmax]. Traduis en français naturel, comme le dirait un francophone, pas mot à mot. Garde exactement le même registre : l’humour, l’ironie, le sarcasme, les jeux de mots (adapte-les pour qu’ils fonctionnent en français), l’argot et la vulgarité restent au même niveau, sans rien censurer ni adoucir. Garde les noms propres. Reste proche de la longueur de l’original pour que ça tienne dans la bulle. Réponds uniquement avec un tableau JSON : [{"box":[ymin,xmin,ymax,xmax],"fr":"traduction"}]. S’il n’y a aucun texte, réponds [].';
+
+// Cadence : on espace les requêtes pour rester sous la limite par minute
+async function pace(){var gap=$('mdl').value.indexOf('lite')>=0?4500:6500,w=lastReq+gap-Date.now();if(w>0)await sleep(w);lastReq=Date.now()}
+
+async function callGemini(apiKey,model,promptText,blobImage){
+var b64=await new Promise(function(ok,ko){var r=new FileReader();r.onload=function(){ok(r.result.split(',')[1])};r.onerror=ko;r.readAsDataURL(blobImage)});
+var url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent';
+// CORRECTION : filtres de sécurité désactivés pour ne pas bloquer le langage vulgaire
+var cats=['HARM_CATEGORY_HARASSMENT','HARM_CATEGORY_HATE_SPEECH','HARM_CATEGORY_SEXUALLY_EXPLICIT','HARM_CATEGORY_DANGEROUS_CONTENT'];
+var payload={contents:[{parts:[{text:promptText},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
+safetySettings:cats.map(function(c){return{category:c,threshold:'BLOCK_NONE'}}),
+generationConfig:{responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}};
+var waits=[20000,30000,45000,60000,90000];
+for(var attempt=0;;attempt++){
+await pace();
+var resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(payload)});
+if(resp.status===429||resp.status===503){
+var body='';try{body=await resp.text()}catch(e){}
+if(resp.status===429&&/PerDay|per day|daily/i.test(body))throw{code:'daily'};
+if(attempt>=waits.length)throw{code:resp.status===429?'rate':'busy'};
+var w=waits[attempt];$('st').textContent='API occupée, nouvelle tentative dans '+(w/1000)+' s...';await sleep(w);continue}
+if(resp.status===400||resp.status===401||resp.status===403){var t2='';try{t2=await resp.text()}catch(e){}if(/API key|API_KEY|PERMISSION/i.test(t2)||resp.status!==400)throw{code:'key'};throw{code:'bad'}}
+if(!resp.ok)throw{code:'http',status:resp.status};
+var data=await resp.json();
+var cand=data.candidates&&data.candidates[0];
+// CORRECTION : une réponse bloquée ou vide est une erreur, plus un succès silencieux
+if((data.promptFeedback&&data.promptFeedback.blockReason)||!cand||!cand.content||!cand.content.parts||!cand.content.parts.length)throw{code:'blocked'};
+return cand.content.parts.map(function(p){return p.text||''}).join('')}}
+
+function msgFor(e){var c=e&&e.code;
+if(c==='daily')return 'Limite du jour atteinte. Tes pages déjà traduites sont gardées : touche « Reprendre » demain (le quota se remet à zéro vers 9 h en France), ou active la facturation sur ton projet Google pour supprimer cette limite.';
+if(c==='key')return 'Clé API refusée. Vérifie qu’elle est correcte et active.';
+if(c==='rate'||c==='busy')return 'L’API est surchargée. Touche « Reprendre » dans quelques minutes.';
+return 'La traduction a échoué. Touche « Reprendre » pour continuer.'}
+
+async function run(){
+var apiKey=$('apikey').value.trim();
+if(!apiKey){say('Entre ta clé API Gemini.');return}
+if(busy)return;
+busy=true;stopF=false;
+var resume=!!pending,model=$('mdl').value;
+if(!resume){res=[];fails=[];$('out').innerHTML=''}
+$('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
+var items=[];
+if(pdfDoc){var a=Math.max(1,+$('p1').value||1),b=Math.min(pdfDoc.numPages,+$('p2').value||a);for(var p=a;p<=b;p++)items.push({p:p})}
+else imgs.forEach(function(f,i){items.push({f:f,n:i+1})});
+var start=resume?pending.i:0;pending=null;
+var i;
+try{
+try{await document.fonts.load(FONT)}catch(e){}
+for(i=start;i<items.length&&!stopF;i++){
+var label=items[i].p||items[i].n;
+$('st').textContent='Traduction '+(i+1)+' / '+items.length+' (page '+label+')...';
+var n0=res.length,cs=items[i].p?await pageCanvas(items[i].p):await imgCanvases(items[i].f);
+try{
+for(var j=0;j<cs.length;j++){var c=cs[j],url;
+try{var txt=await callGemini(apiKey,model,PR.replace('{L}',$('src').value),await blobOf(c));url=paint(c,parse(txt))}
+catch(e){if(e&&(e.code==='blocked'||e.code==='http'||e.code==='bad')){if(fails.indexOf(label)<0)fails.push(label);url=c.toDataURL('image/jpeg',.88)}else throw e}
+res.push(url);var im=new Image();im.src=url;im.alt='Page '+label;$('out').appendChild(im)}
+}catch(e){res.length=n0;while($('out').children.length>n0)$('out').removeChild($('out').lastChild);throw e}
+}
+if(stopF&&i<items.length){pending={i:i};$('st').textContent='Arrêté. Touche « Reprendre » pour continuer.'}
+else $('st').textContent='Terminé : '+res.length+' page'+(res.length>1?'s':'')+'.';
+if(fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+'. Relance-les en réglant « De la page » et « À la page ».');
+}catch(e){pending={i:i};say(msgFor(e));$('st').textContent=res.length+' page'+(res.length>1?'s':'')+' traduite'+(res.length>1?'s':'')+'.'}
+$('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
+
+$('go').onclick=run;
+$('stop').onclick=function(){stopF=true};
+
+$('dl').onclick=async function(){
+try{
+var J=window.jspdf.jsPDF,doc=null;
+for(var i=0;i<res.length;i++){var im=new Image();im.src=res[i];await im.decode();var w=im.naturalWidth,h=im.naturalHeight;
+if(!doc)doc=new J({unit:'px',format:[w,h],orientation:w>h?'l':'p',hotfixes:['px_scaling']});else doc.addPage([w,h],w>h?'l':'p');
+doc.addImage(res[i],'JPEG',0,0,w,h)}
+var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download='manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);say('PDF enregistré.')
+}catch(err){say('Le PDF n’a pas pu être créé.')}};
+</script>
+</body>
+</html>
