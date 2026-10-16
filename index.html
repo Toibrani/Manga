@@ -35,7 +35,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <body>
 <main>
 <h1>MANGA FR</h1>
-<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 7</b></p>
+<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 8</b></p>
 
 <div class="card">
 <div class="mut">Clé API Gemini</div>
@@ -50,7 +50,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
 <div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
 <div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
-<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select><input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px"></div><div style="margin-top:10px"><div class="mut">Vitesse</div><select id="spd"><option value="safe">Compte gratuit : prudent (1 page à la fois)</option><option value="fast">Compte payant : rapide (4 pages à la fois)</option></select></div>
+<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select><input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px"></div><div style="margin-top:10px"><div class="mut">Vitesse</div><select id="spd"><option value="safe">Compte gratuit (environ 1 à 2 min pour 36 pages)</option><option value="fast">Compte payant : turbo (environ 15 à 40 s)</option></select></div><div style="margin-top:10px"><div class="mut">Pages envoyées par requête</div><select id="bat"><option value="1">1 (plus précis, plus lent)</option><option value="2">2</option><option value="4" selected>4 (recommandé)</option><option value="6">6 (le plus rapide)</option></select></div>
 <div style="margin-top:10px"><div class="mut">Contexte de l’œuvre (facultatif)</div><input id="ctx" type="text" placeholder="Ex : seinen violent, argot de rue, personnages : Kenji, Aya"></div><label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
 <button class="btn" id="go" disabled>Traduire</button>
 <button class="btn alt" id="stop" hidden>Arrêter</button>
@@ -176,41 +176,64 @@ var t=document.createElement('canvas'),k=Math.min(1,520/c.width);t.width=Math.ma
 t.getContext('2d').drawImage(c,0,0,t.width,t.height);
 var tb=await new Promise(function(r){t.toBlob(r,'image/jpeg',.8)});t.width=t.height=0;
 return{f:f,t:URL.createObjectURL(tb)}}
-async function doItem(it,label,apiKey,model,src){
-var cs=it.p?await pageCanvas(it.p):await imgCanvases(it.f),out=[],cx=($('ctx').value||'').trim();
-for(var j=0;j<cs.length;j++){var c=cs[j];
-try{var pr=PR.replace('{L}',src)+(cx?' Contexte de l’œuvre (respecte-le pour le ton et les noms) : '+cx:'');var txt=await callGemini(apiKey,model,pr,await blobOf(c));paint(c,parse(txt))}
-catch(e){if(e&&(e.code==='blocked'||e.code==='format')){blockWhy=e.msg;if(fails.indexOf(label)<0)fails.push(label)}else throw e}
-out.push(await pack(c));c.width=c.height=0}
+function parseBatch(t,n){
+var v=parse(t),out=new Array(n);
+if(v.length&&v.every(function(x){return x&&typeof x==='object'&&('items' in x||'image' in x)})){
+v.forEach(function(x,i){var k=(+x.image||i+1)-1;if(k>=0&&k<n&&Array.isArray(x.items))out[k]=x.items})}
+else if(n===1)out[0]=v;
 return out}
+function buildPrompt(n,src,cx){
+var base=PR.split(' Réponds uniquement')[0].replace('{L}',src);
+return base+(cx?' Contexte de l’œuvre (respecte-le pour le ton et les noms) : '+cx+'.':'')+' Je te donne '+n+' image'+(n>1?'s':'')+', chacune précédée de son numéro (« Image 1 : », etc.). Les rectangles sont relatifs à l’image concernée. Réponds uniquement avec un tableau JSON, une entrée par image, même si elle n’a aucun texte : [{"image":1,"items":[{"box":[ymin,xmin,ymax,xmax],"fr":"traduction"}]}].'}
+async function doTask(task,apiKey,model,src){
+var cx=($('ctx').value||'').trim(),units=[];
+for(var q=0;q<task.length;q++){var cs=task[q].p?await pageCanvas(task[q].p):await imgCanvases(task[q].f);cs.forEach(function(c){units.push({c:c,q:q})})}
+var got=new Array(units.length);
+async function ask(list){
+var parts=[{text:buildPrompt(list.length,src,cx)}];
+for(var k=0;k<list.length;k++){parts.push({text:'Image '+(k+1)+' :'});parts.push({inline_data:{mime_type:'image/jpeg',data:await b64of(await blobOf(units[list[k]].c))}})}
+var arr=parseBatch(await gen(apiKey,model,parts,true),list.length);
+list.forEach(function(u,k){if(arr[k])got[u]=arr[k]})}
+var all=units.map(function(_,i){return i});
+try{await ask(all)}catch(e){if(!(e&&(e.code==='blocked'||e.code==='format')))throw e}
+for(var u=0;u<units.length;u++){if(got[u])continue;
+try{await ask([u])}catch(e){if(e&&(e.code==='blocked'||e.code==='format')){var lb=task[units[u].q].p||task[units[u].q].n;blockWhy=e.msg;if(fails.indexOf(lb)<0)fails.push(lb);got[u]=[]}else throw e}
+if(!got[u])got[u]=[]}
+var outs=task.map(function(it){return{label:it.p||it.n,packs:[]}});
+for(var u2=0;u2<units.length;u2++){paint(units[u2].c,got[u2]||[]);outs[units[u2].q].packs.push(await pack(units[u2].c));units[u2].c.width=units[u2].c.height=0}
+return outs}
 
 async function run(){
 var apiKey=$('apikey').value.trim();
 if(!apiKey){say('Entre ta clé API Gemini.');return}
 if(busy)return;
 busy=true;stopF=false;
-var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?4:1;
-GAP=fast?300:(model.indexOf('lite')>=0?4500:6500);OVR='';TRIED=[];try{if(!MODELS.length)await loadModels()}catch(e){}
+var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?8:3,B=resume?pending.b:(+$('bat').value||4);
+GAP=fast?200:(model.indexOf('lite')>=0?4500:6500);OVR='';TRIED=[];try{if(!MODELS.length)await loadModels()}catch(e){}
 if(!resume){res=[];fails=[];$('out').innerHTML=''}
 $('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
 var items=[];
 if(pdfDoc){var a=Math.max(1,+$('p1').value||1),b=Math.min(pdfDoc.numPages,+$('p2').value||a);for(var p=a;p<=b;p++)items.push({p:p})}
 else imgs.forEach(function(f,i){items.push({f:f,n:i+1})});
-var start=resume?Math.min(pending.i,items.length):0;pending=null;
-var next=start,flush=start,done={},fatal=null,t0=Date.now(),wl=null;try{wl=await navigator.wakeLock.request('screen')}catch(e){}
+var tasks=[];for(var q=0;q<items.length;q+=B)tasks.push(items.slice(q,q+B));
+var start=resume?Math.min(pending.i,tasks.length):0;pending=null;
+var next=start,flush=start,done={},fatal=null,t0=Date.now(),wl=null,pg=0,total=0;
+for(var z=start;z<tasks.length;z++)total+=tasks[z].length;
+try{wl=await navigator.wakeLock.request('screen')}catch(e){}
 try{await document.fonts.load(FONT)}catch(e){}
-function show(){while(done[flush]){var lb=items[flush].p||items[flush].n;done[flush].forEach(function(u){res.push(u.f);var im=new Image();im.src=u.t;im.loading='lazy';im.alt='Page '+lb;$('out').appendChild(im)});delete done[flush];flush++}
-var d=flush-start,tot=items.length-start,eta=d?Math.round((Date.now()-t0)/d*(tot-d)/60000):0;
-$('st').textContent='Traduction : '+d+' / '+tot+' pages terminées'+(d&&d<tot?' · environ '+Math.max(1,eta)+' min restantes':'')+'...'}
-async function worker(){while(!stopF&&!fatal){var i=next++;if(i>=items.length)return;
-try{done[i]=await doItem(items[i],items[i].p||items[i].n,apiKey,model,src);show()}catch(e){fatal=fatal||e;return}}}
+function tm(sec){return sec<90?sec+' s':Math.round(sec/60)+' min'}
+function show(){while(done[flush]){done[flush].forEach(function(o){o.packs.forEach(function(u){res.push(u.f);var im=new Image();im.src=u.t;im.loading='lazy';im.alt='Page '+o.label;$('out').appendChild(im)});pg++});delete done[flush];flush++}
+var eta=pg?Math.round((Date.now()-t0)/pg*(total-pg)/1000):0;
+$('st').textContent='Traduction : '+pg+' / '+total+' pages terminées'+(pg&&pg<total?' · environ '+tm(Math.max(1,eta))+' restantes':'')+'...'}
+async function worker(){while(!stopF&&!fatal){var i=next++;if(i>=tasks.length)return;
+try{done[i]=await doTask(tasks[i],apiKey,model,src);show()}catch(e){fatal=fatal||e;return}}}
 $('st').textContent='Traduction en cours...';
 var ws=[];for(var w=0;w<conc;w++)ws.push(worker());
 await Promise.all(ws);
 var n=res.length+' page'+(res.length>1?'s':'');
-if(fatal){pending={i:flush};say(msgFor(fatal));$('st').textContent=n+' traduite'+(res.length>1?'s':'')+'.'}
-else if(stopF&&flush<items.length){pending={i:flush};$('st').textContent='Arrêté : '+n+'. Touche « Reprendre » pour continuer.'}
-else $('st').textContent='Terminé : '+n+'.';
+if(fatal){pending={i:flush,b:B};say(msgFor(fatal));$('st').textContent=n+' traduite'+(res.length>1?'s':'')+'.'}
+else if(stopF&&flush<tasks.length){pending={i:flush,b:B};$('st').textContent='Arrêté : '+n+'. Touche « Reprendre » pour continuer.'}
+else $('st').textContent='Terminé : '+n+' en '+tm(Math.round((Date.now()-t0)/1000))+'.';
 if(!fatal&&fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+' (raison : '+blockWhy+'). Relance-les en réglant « De la page » et « À la page ».');
 try{wl&&wl.release()}catch(e){}
 $('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
