@@ -50,7 +50,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
 <div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
 <div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
-<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-2.5-flash">Gemini 2.5 Flash (meilleure qualité)</option><option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (plus rapide, plus de pages gratuites)</option></select></div>
+<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-2.5-flash">Gemini 2.5 Flash (meilleure qualité)</option><option value="gemini-flash-latest">Gemini Flash, dernière version</option><option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (plus rapide, plus de pages gratuites)</option></select></div>
 <label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
 <button class="btn" id="go" disabled>Traduire</button>
 <button class="btn alt" id="stop" hidden>Arrêter</button>
@@ -61,7 +61,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 </main>
 <script>
 function $(i){return document.getElementById(i)}
-var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,FONT='700 20px "Comic Neue"';
+var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,blockWhy='',FONT='700 20px "Comic Neue"';
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function say(t){$('msg').textContent=t||''}
 
@@ -77,7 +77,7 @@ $('f').onchange=async function(e){
 var a=Array.prototype.slice.call(e.target.files);pdfDoc=null;imgs=[];res=[];fails=[];pending=null;setGo();$('out').innerHTML='';$('dl').hidden=true;$('rg').hidden=true;say('');$('st').textContent='';
 if(!a.length){$('go').disabled=true;return}
 var pf=a.filter(function(x){return x.type==='application/pdf'||/\.pdf$/i.test(x.name)})[0];
-if(pf){try{pdfDoc=await pdfjsLib.getDocument({data:await pf.arrayBuffer()}).promise;var n=pdfDoc.numPages;$('p1').value=1;$('p2').value=Math.min(5,n);$('p1').max=$('p2').max=n;$('pn').textContent='Ce PDF a '+n+' pages. Tu peux tout traduire : mets la dernière page dans « À la page ».';$('rg').hidden=false;$('fl').textContent=pf.name}catch(x){say('Impossible de lire ce PDF.');pdfDoc=null}}
+if(pf){try{pdfDoc=await pdfjsLib.getDocument({data:await pf.arrayBuffer()}).promise;var n=pdfDoc.numPages;$('p1').value=1;$('p2').value=n;$('p1').max=$('p2').max=n;$('pn').textContent='Ce PDF a '+n+' pages : tout le PDF est sélectionné. Tu peux réduire la plage si tu veux.';$('rg').hidden=false;$('fl').textContent=pf.name}catch(x){say('Impossible de lire ce PDF.');pdfDoc=null}}
 else{imgs=a.sort(function(x,y){return x.name<y.name?-1:1});$('fl').textContent=imgs.length+' image'+(imgs.length>1?'s':'')}
 $('go').disabled=!(pdfDoc||imgs.length)};
 
@@ -126,19 +126,21 @@ var body='';try{body=await resp.text()}catch(e){}
 if(resp.status===429&&/PerDay|per day|daily/i.test(body))throw{code:'daily'};
 if(attempt>=waits.length)throw{code:resp.status===429?'rate':'busy'};
 var w=waits[attempt];$('st').textContent='API occupée, nouvelle tentative dans '+(w/1000)+' s...';await sleep(w);continue}
-if(resp.status===400||resp.status===401||resp.status===403){var t2='';try{t2=await resp.text()}catch(e){}if(/API key|API_KEY|PERMISSION/i.test(t2)||resp.status!==400)throw{code:'key'};throw{code:'bad'}}
-if(!resp.ok)throw{code:'http',status:resp.status};
+if(!resp.ok){var t2='';try{t2=await resp.text()}catch(e){}var em=t2;try{em=JSON.parse(t2).error.message||t2}catch(e){}
+if(resp.status===400&&/think/i.test(em)&&payload.generationConfig.thinkingConfig){delete payload.generationConfig.thinkingConfig;continue}
+if(/API key|API_KEY|permission/i.test(em)||resp.status===401||resp.status===403)throw{code:'key',msg:em};
+throw{code:'http',status:resp.status,msg:em}}
 var data=await resp.json();
 var cand=data.candidates&&data.candidates[0];
 // CORRECTION : une réponse bloquée ou vide est une erreur, plus un succès silencieux
-if((data.promptFeedback&&data.promptFeedback.blockReason)||!cand||!cand.content||!cand.content.parts||!cand.content.parts.length)throw{code:'blocked'};
+if((data.promptFeedback&&data.promptFeedback.blockReason)||!cand||!cand.content||!cand.content.parts||!cand.content.parts.length)throw{code:'blocked',msg:String((data.promptFeedback&&data.promptFeedback.blockReason)||(cand&&cand.finishReason)||'réponse vide')};
 return cand.content.parts.map(function(p){return p.text||''}).join('')}}
 
 function msgFor(e){var c=e&&e.code;
 if(c==='daily')return 'Limite du jour atteinte. Tes pages déjà traduites sont gardées : touche « Reprendre » demain (le quota se remet à zéro vers 9 h en France), ou active la facturation sur ton projet Google pour supprimer cette limite.';
-if(c==='key')return 'Clé API refusée. Vérifie qu’elle est correcte et active.';
+if(c==='key')return 'Clé API refusée. Vérifie qu’elle est correcte et active.'+(e.msg?' ('+e.msg+')':'');
 if(c==='rate'||c==='busy')return 'L’API est surchargée. Touche « Reprendre » dans quelques minutes.';
-return 'La traduction a échoué. Touche « Reprendre » pour continuer.'}
+return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+((e&&(e.msg||e.message))||'inconnue')+'. Touche « Reprendre » pour réessayer.'}
 
 async function run(){
 var apiKey=$('apikey').value.trim();
@@ -162,13 +164,13 @@ var n0=res.length,cs=items[i].p?await pageCanvas(items[i].p):await imgCanvases(i
 try{
 for(var j=0;j<cs.length;j++){var c=cs[j],url;
 try{var txt=await callGemini(apiKey,model,PR.replace('{L}',$('src').value),await blobOf(c));url=paint(c,parse(txt))}
-catch(e){if(e&&(e.code==='blocked'||e.code==='http'||e.code==='bad')){if(fails.indexOf(label)<0)fails.push(label);url=c.toDataURL('image/jpeg',.88)}else throw e}
+catch(e){if(e&&e.code==='blocked'){blockWhy=e.msg;if(fails.indexOf(label)<0)fails.push(label);url=c.toDataURL('image/jpeg',.88)}else throw e}
 res.push(url);var im=new Image();im.src=url;im.alt='Page '+label;$('out').appendChild(im)}
 }catch(e){res.length=n0;while($('out').children.length>n0)$('out').removeChild($('out').lastChild);throw e}
 }
 if(stopF&&i<items.length){pending={i:i};$('st').textContent='Arrêté. Touche « Reprendre » pour continuer.'}
 else $('st').textContent='Terminé : '+res.length+' page'+(res.length>1?'s':'')+'.';
-if(fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+'. Relance-les en réglant « De la page » et « À la page ».');
+if(fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+' (raison : '+blockWhy+'). Relance-les en réglant « De la page » et « À la page ».');
 }catch(e){pending={i:i};say(msgFor(e));$('st').textContent=res.length+' page'+(res.length>1?'s':'')+' traduite'+(res.length>1?'s':'')+'.'}
 $('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
 
