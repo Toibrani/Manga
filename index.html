@@ -48,143 +48,916 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 
 <label class="drop" for="f"><span id="fl">Choisir un PDF ou des images</span><br><span class="mut">Un PDF, ou plusieurs images</span></label>
 <input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
-<div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
-<div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
-<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-2.5-flash">Gemini 2.5 Flash (meilleure qualité)</option><option value="gemini-flash-latest">Gemini Flash, dernière version</option><option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (plus rapide, plus de pages gratuites)</option></select></div>
-<label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
+
+<div class="card" id="rg" hidden>
+<div class="g">
+<div>
+<div class="mut">De la page</div>
+<input id="p1" type="number" min="1" value="1">
+</div>
+<div>
+<div class="mut">À la page</div>
+<input id="p2" type="number" min="1" value="5">
+</div>
+</div>
+<div class="mut" id="pn" style="margin-top:6px"></div>
+</div>
+
+<div class="card">
+<div class="g">
+<div>
+<div class="mut">Langue d’origine</div>
+<select id="src">
+<option value="anglais">Anglais</option>
+<option value="japonais">Japonais</option>
+<option value="coréen">Coréen</option>
+<option value="chinois">Chinois</option>
+<option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option>
+</select>
+</div>
+<div>
+<div class="mut">Effacement</div>
+<select id="mg">
+<option value="0">Serré</option>
+<option value="1" selected>Moyen</option>
+<option value="2">Large</option>
+</select>
+</div>
+</div>
+
+<div style="margin-top:10px">
+<div class="mut">Modèle</div>
+<select id="mdl">
+<option value="gemini-2.5-flash">Gemini 2.5 Flash (recommandé)</option>
+<option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (plus léger)</option>
+<option value="gemini-2.0-flash">Gemini 2.0 Flash (solution de secours)</option>
+</select>
+<input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px">
+</div>
+
+<div style="margin-top:10px">
+<div class="mut">Vitesse</div>
+<select id="spd">
+<option value="safe">Compte gratuit : prudent (1 page à la fois)</option>
+<option value="fast">Compte payant : rapide (4 pages à la fois)</option>
+</select>
+</div>
+
+<label class="c">
+<input type="checkbox" id="up" checked>
+Texte en majuscules, comme en manga
+</label>
+</div>
+
 <button class="btn" id="go" disabled>Traduire</button>
 <button class="btn alt" id="stop" hidden>Arrêter</button>
+
 <div class="st" id="st"></div>
 <div id="out"></div>
+
 <button class="btn" id="dl" hidden>Télécharger en PDF</button>
 <p class="mut" id="msg"></p>
 </main>
+
 <script>
 function $(i){return document.getElementById(i)}
-var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,blockWhy='',FONT='700 20px "Comic Neue"';
+
+var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,GAP=6500,blockWhy='',FONT='700 20px "Comic Neue"';
+
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function say(t){$('msg').textContent=t||''}
 
 // Clé API stockée localement
-try{if(localStorage.getItem('gemini_key'))$('apikey').value=localStorage.getItem('gemini_key')}catch(e){}
-$('apikey').oninput=function(){try{localStorage.setItem('gemini_key',this.value.trim())}catch(e){}};
-$('tkey').onclick=function(){$('apikey').type=$('apikey').type==='password'?'text':'password';this.textContent=$('apikey').type==='password'?'Voir':'Cacher'};
+try{
+if(localStorage.getItem('gemini_key'))$('apikey').value=localStorage.getItem('gemini_key')
+}catch(e){}
 
-try{pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'}catch(e){}
+$('apikey').oninput=function(){
+try{localStorage.setItem('gemini_key',this.value.trim())}catch(e){}
+};
 
-function setGo(){$('go').textContent=pending?'Reprendre':'Traduire'}
+$('tkey').onclick=function(){
+$('apikey').type=$('apikey').type==='password'?'text':'password';
+this.textContent=$('apikey').type==='password'?'Voir':'Cacher'
+};
+
+try{
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'
+}catch(e){}
+
+function setGo(){
+$('go').textContent=pending?'Reprendre':'Traduire'
+}
+
+// CHARGEMENT PDF ET IMAGES
 $('f').onchange=async function(e){
-var a=Array.prototype.slice.call(e.target.files);pdfDoc=null;imgs=[];res=[];fails=[];pending=null;setGo();$('out').innerHTML='';$('dl').hidden=true;$('rg').hidden=true;say('');$('st').textContent='';
-if(!a.length){$('go').disabled=true;return}
-var pf=a.filter(function(x){return x.type==='application/pdf'||/\.pdf$/i.test(x.name)})[0];
-if(pf){try{pdfDoc=await pdfjsLib.getDocument({data:await pf.arrayBuffer()}).promise;var n=pdfDoc.numPages;$('p1').value=1;$('p2').value=n;$('p1').max=$('p2').max=n;$('pn').textContent='Ce PDF a '+n+' pages : tout le PDF est sélectionné. Tu peux réduire la plage si tu veux.';$('rg').hidden=false;$('fl').textContent=pf.name}catch(x){say('Impossible de lire ce PDF.');pdfDoc=null}}
-else{imgs=a.sort(function(x,y){return x.name<y.name?-1:1});$('fl').textContent=imgs.length+' image'+(imgs.length>1?'s':'')}
-$('go').disabled=!(pdfDoc||imgs.length)};
 
-function blobOf(c){return new Promise(function(r){c.toBlob(r,'image/jpeg',.85)})}
-async function pageCanvas(p){var pg=await pdfDoc.getPage(p),v0=pg.getViewport({scale:1}),v=pg.getViewport({scale:Math.min(2.5,1300/v0.width)}),c=document.createElement('canvas');c.width=Math.round(v.width);c.height=Math.round(v.height);await pg.render({canvasContext:c.getContext('2d'),viewport:v}).promise;return[c]}
-async function imgCanvases(f){var b=await createImageBitmap(f),sc=Math.min(1,1300/b.width),w=Math.round(b.width*sc),H=Math.round(b.height*sc),sh=Math.round(w*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
-for(var i=0;i<n;i++){var h=Math.min(sh,H-i*sh),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(b,0,i*sh/sc,b.width,h/sc,0,0,w,h);o.push(c)}return o}
+var a=Array.prototype.slice.call(e.target.files);
 
-function parse(t){var m=t.match(/\[[\s\S]*\]/);if(!m)return[];try{var a=JSON.parse(m[0]);return Array.isArray(a)?a:[]}catch(e){return[]}}
+pdfDoc=null;
+imgs=[];
+res=[];
+fails=[];
+pending=null;
 
-function median(ctx,x,y,w,h){x=Math.max(0,Math.floor(x));y=Math.max(0,Math.floor(y));w=Math.max(2,Math.min(ctx.canvas.width-x,Math.ceil(w)));h=Math.max(2,Math.min(ctx.canvas.height-y,Math.ceil(h)));var d=ctx.getImageData(x,y,w,h).data,p=[];
-function add(i,j){var k=(j*w+i)*4;p.push([d[k],d[k+1],d[k+2],.3*d[k]+.59*d[k+1]+.11*d[k+2]])}
-for(var i=0;i<w;i++){add(i,0);add(i,h-1);if(h>3){add(i,1);add(i,h-2)}}for(var j=0;j<h;j++){add(0,j);add(w-1,j);if(w>3){add(1,j);add(w-2,j)}}
-p.sort(function(a,b){return a[3]-b[3]});return p[Math.floor(p.length/2)]}
+setGo();
 
-function wrap(ctx,t,mw){var ws=t.split(/\s+/),L=[],cur='';ws.forEach(function(w){var s=cur?cur+' '+w:w;if(cur&&ctx.measureText(s).width>mw){L.push(cur);cur=w}else cur=s});if(cur)L.push(cur);return L}
-function fit(ctx,t,w,h){var s=Math.min(Math.round(h),72),L=[t];for(;s>=10;s--){ctx.font='700 '+s+'px "Comic Neue","Comic Sans MS",sans-serif';L=wrap(ctx,t,w);if(L.length*s*1.12<=h)return{s:s,L:L}}ctx.font='700 10px "Comic Neue","Comic Sans MS",sans-serif';return{s:10,L:wrap(ctx,t,w)}}
+$('out').innerHTML='';
+$('dl').hidden=true;
+$('rg').hidden=true;
+say('');
+$('st').textContent='';
 
-// CORRECTION : Gemini renvoie les rectangles au format [ymin, xmin, ymax, xmax] (0 à 1000)
-function paint(c,arr){var ctx=c.getContext('2d'),W=c.width,H=c.height,pad=Math.round(W*[.002,.005,.01][+$('mg').value]),up=$('up').checked;
-arr.forEach(function(it){var bx=it&&(it.box||it.box_2d);if(!bx||bx.length<4||!it.fr)return;var b=bx.map(Number),x1=b[1]/1000*W-pad,y1=b[0]/1000*H-pad,x2=b[3]/1000*W+pad,y2=b[2]/1000*H+pad;if(!(x2>x1+4&&y2>y1+4))return;
-var col=median(ctx,x1-3,y1-3,x2-x1+6,y2-y1+6);ctx.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';ctx.fillRect(x1,y1,x2-x1,y2-y1);
-var t=up?String(it.fr).toUpperCase():String(it.fr),f=fit(ctx,t,(x2-x1)*1.0,y2-y1),lh=f.s*1.12;ctx.fillStyle=col[3]>128?'#111':'#fff';ctx.textAlign='center';ctx.textBaseline='middle';
-f.L.forEach(function(l,i){ctx.fillText(l,(x1+x2)/2,(y1+y2)/2-(f.L.length-1)*lh/2+i*lh)})});
-return c.toDataURL('image/jpeg',.88)}
+if(!a.length){
+$('go').disabled=true;
+return
+}
 
+var pf=a.filter(function(x){
+return x.type==='application/pdf'||/\.pdf$/i.test(x.name)
+})[0];
+
+if(pf){
+
+try{
+
+pdfDoc=await pdfjsLib.getDocument({
+data:await pf.arrayBuffer()
+}).promise;
+
+var n=pdfDoc.numPages;
+
+$('p1').value=1;
+$('p2').value=n;
+$('p1').max=$('p2').max=n;
+
+$('pn').textContent='PDF de '+n+' pages. Toutes les pages (1 à '+n+') sont sélectionnées.';
+
+$('rg').hidden=false;
+$('fl').textContent=pf.name;
+$('go').disabled=false;
+
+}catch(x){
+
+say('Impossible de lire ce PDF : '+(x&&x.message?x.message:'erreur inconnue'));
+pdfDoc=null
+
+}
+
+}else{
+
+imgs=a.sort(function(x,y){
+return x.name<y.name?-1:1
+});
+
+$('fl').textContent=imgs.length+' image'+(imgs.length>1?'s':'')
+
+}
+
+$('go').disabled=!(pdfDoc||imgs.length)
+};
+
+// CONVERSION PDF EN IMAGE
+function blobOf(c){
+return new Promise(function(r){
+c.toBlob(r,'image/jpeg',.85)
+})
+}
+
+async function pageCanvas(p){
+
+var pg=await pdfDoc.getPage(p);
+
+var v0=pg.getViewport({scale:1});
+
+var v=pg.getViewport({
+scale:Math.min(2.5,1300/v0.width)
+});
+
+var c=document.createElement('canvas');
+
+c.width=Math.round(v.width);
+c.height=Math.round(v.height);
+
+await pg.render({
+canvasContext:c.getContext('2d'),
+viewport:v
+}).promise;
+
+return[c]
+}
+
+// CONVERSION DES IMAGES
+async function imgCanvases(f){
+
+var b=await createImageBitmap(f);
+
+var sc=Math.min(1,1300/b.width);
+
+var w=Math.round(b.width*sc);
+var H=Math.round(b.height*sc);
+
+var sh=Math.round(w*1.5);
+
+var n=Math.max(1,Math.ceil(H/sh));
+
+var o=[];
+
+for(var i=0;i<n;i++){
+
+var h=Math.min(sh,H-i*sh);
+
+var c=document.createElement('canvas');
+
+c.width=w;
+c.height=h;
+
+c.getContext('2d').drawImage(
+b,0,i*sh/sc,b.width,h/sc,0,0,w,h
+);
+
+o.push(c)
+
+}
+
+return o
+}
+
+// PARSAGE JSON
+function parse(t){
+
+if(typeof t!=='string'||!t.trim())
+throw{code:'empty',msg:'Gemini a renvoyé une réponse vide.'};
+
+var s=t.trim()
+.replace(/^```(?:json)?\s*/i,'')
+.replace(/\s*```$/,'')
+.trim();
+
+var a=s.indexOf('[');
+var b=s.lastIndexOf(']');
+
+if(a<0||b<a)
+throw{code:'format',msg:'Réponse Gemini non reconnue : aucun tableau JSON.'};
+
+try{
+
+var v=JSON.parse(s.slice(a,b+1));
+
+if(!Array.isArray(v))
+throw new Error('Le résultat JSON n’est pas un tableau.');
+
+return v
+
+}catch(e){
+
+throw{
+code:'format',
+msg:'JSON Gemini invalide : '+(e.message||'format incorrect')
+}
+
+}
+
+}
+
+// COULEUR DE FOND
+function median(ctx,x,y,w,h){
+
+x=Math.max(0,Math.floor(x));
+y=Math.max(0,Math.floor(y));
+
+w=Math.max(2,Math.min(ctx.canvas.width-x,Math.ceil(w)));
+h=Math.max(2,Math.min(ctx.canvas.height-y,Math.ceil(h)));
+
+var d=ctx.getImageData(x,y,w,h).data;
+var p=[];
+
+function add(i,j){
+var k=(j*w+i)*4;
+p.push([
+d[k],d[k+1],d[k+2],
+.3*d[k]+.59*d[k+1]+.11*d[k+2]
+])
+}
+
+for(var i=0;i<w;i++){
+add(i,0);
+add(i,h-1);
+if(h>3){
+add(i,1);
+add(i,h-2)
+}
+}
+
+for(var j=0;j<h;j++){
+add(0,j);
+add(w-1,j);
+if(w>3){
+add(1,j);
+add(w-2,j)
+}
+}
+
+p.sort(function(a,b){return a[3]-b[3]});
+
+return p[Math.floor(p.length/2)]
+}
+
+// TEXTE ET DIMENSIONS
+function wrap(ctx,t,mw){
+
+var ws=t.split(/\s+/);
+var L=[];
+var cur='';
+
+ws.forEach(function(w){
+
+var s=cur?cur+' '+w:w;
+
+if(cur&&ctx.measureText(s).width>mw){
+L.push(cur);
+cur=w
+}else cur=s
+
+});
+
+if(cur)L.push(cur);
+
+return L
+}
+
+function fit(ctx,t,w,h){
+
+var s=Math.min(Math.round(h),72);
+var L=[t];
+
+for(;s>=10;s--){
+
+ctx.font='700 '+s+'px "Comic Neue","Comic Sans MS",sans-serif';
+
+L=wrap(ctx,t,w);
+
+if(L.length*s*1.12<=h)
+return{s:s,L:L}
+
+}
+
+ctx.font='700 10px "Comic Neue","Comic Sans MS",sans-serif';
+
+return{s:10,L:wrap(ctx,t,w)}
+}
+
+// REMPLACEMENT DU TEXTE
+function paint(c,arr){
+
+var ctx=c.getContext('2d');
+var W=c.width,H=c.height;
+
+var pad=Math.round(W*[.002,.005,.01][+$('mg').value]);
+
+var up=$('up').checked;
+
+arr.forEach(function(it){
+
+var bx=it&&(it.box||it.box_2d);
+
+if(!bx||bx.length<4||!it.fr)return;
+
+var b=bx.map(Number);
+
+var x1=b[1]/1000*W-pad;
+var y1=b[0]/1000*H-pad;
+var x2=b[3]/1000*W+pad;
+var y2=b[2]/1000*H+pad;
+
+if(!(x2>x1+4&&y2>y1+4))return;
+
+var col=median(
+ctx,x1-3,y1-3,x2-x1+6,y2-y1+6
+);
+
+ctx.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';
+
+ctx.fillRect(x1,y1,x2-x1,y2-y1);
+
+var t=up?String(it.fr).toUpperCase():String(it.fr);
+
+var f=fit(ctx,t,(x2-x1)*1.0,y2-y1);
+
+var lh=f.s*1.12;
+
+ctx.fillStyle=col[3]>128?'#111':'#fff';
+
+ctx.textAlign='center';
+ctx.textBaseline='middle';
+
+f.L.forEach(function(l,i){
+
+ctx.fillText(
+l,
+(x1+x2)/2,
+(y1+y2)/2-(f.L.length-1)*lh/2+i*lh
+)
+
+})
+
+});
+
+return c.toDataURL('image/jpeg',.88)
+
+}
+
+// INSTRUCTIONS DE TRADUCTION
 var PR='Tu es traducteur professionnel de mangas et webtoons. Repère chaque bulle de dialogue, pensée et cartouche de narration contenant du texte. Langue d’origine : {L}. Ignore les onomatopées dessinées, les signatures et les filigranes. Pour chaque texte, donne le rectangle qui entoure uniquement les lignes de texte (pas le contour de la bulle), en coordonnées de 0 à 1000 par rapport à la hauteur et à la largeur de l’image, dans cet ordre : [ymin,xmin,ymax,xmax]. Traduis en français naturel, comme le dirait un francophone, pas mot à mot. Garde exactement le même registre : l’humour, l’ironie, le sarcasme, les jeux de mots (adapte-les pour qu’ils fonctionnent en français), l’argot et la vulgarité restent au même niveau, sans rien censurer ni adoucir. Garde les noms propres. Reste proche de la longueur de l’original pour que ça tienne dans la bulle. Réponds uniquement avec un tableau JSON : [{"box":[ymin,xmin,ymax,xmax],"fr":"traduction"}]. S’il n’y a aucun texte, réponds [].';
 
-// Cadence : on espace les requêtes pour rester sous la limite par minute
-async function pace(){var gap=$('mdl').value.indexOf('lite')>=0?4500:6500,w=lastReq+gap-Date.now();if(w>0)await sleep(w);lastReq=Date.now()}
+// CADENCE DES REQUÊTES
+async function pace(){
 
-async function callGemini(apiKey,model,promptText,blobImage){
-var b64=await new Promise(function(ok,ko){var r=new FileReader();r.onload=function(){ok(r.result.split(',')[1])};r.onerror=ko;r.readAsDataURL(blobImage)});
-var url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent';
-// CORRECTION : filtres de sécurité désactivés pour ne pas bloquer le langage vulgaire
-var cats=['HARM_CATEGORY_HARASSMENT','HARM_CATEGORY_HATE_SPEECH','HARM_CATEGORY_SEXUALLY_EXPLICIT','HARM_CATEGORY_DANGEROUS_CONTENT'];
-var payload={contents:[{parts:[{text:promptText},{inline_data:{mime_type:'image/jpeg',data:b64}}]}],
-safetySettings:cats.map(function(c){return{category:c,threshold:'BLOCK_NONE'}}),
-generationConfig:{responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}};
-var waits=[20000,30000,45000,60000,90000];
-for(var attempt=0;;attempt++){
-await pace();
-var resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(payload)});
-if(resp.status===429||resp.status===503){
-var body='';try{body=await resp.text()}catch(e){}
-if(resp.status===429&&/PerDay|per day|daily/i.test(body))throw{code:'daily'};
-if(attempt>=waits.length)throw{code:resp.status===429?'rate':'busy'};
-var w=waits[attempt];$('st').textContent='API occupée, nouvelle tentative dans '+(w/1000)+' s...';await sleep(w);continue}
-if(!resp.ok){var t2='';try{t2=await resp.text()}catch(e){}var em=t2;try{em=JSON.parse(t2).error.message||t2}catch(e){}
-if(resp.status===400&&/think/i.test(em)&&payload.generationConfig.thinkingConfig){delete payload.generationConfig.thinkingConfig;continue}
-if(/API key|API_KEY|permission/i.test(em)||resp.status===401||resp.status===403)throw{code:'key',msg:em};
-throw{code:'http',status:resp.status,msg:em}}
-var data=await resp.json();
-var cand=data.candidates&&data.candidates[0];
-// CORRECTION : une réponse bloquée ou vide est une erreur, plus un succès silencieux
-if((data.promptFeedback&&data.promptFeedback.blockReason)||!cand||!cand.content||!cand.content.parts||!cand.content.parts.length)throw{code:'blocked',msg:String((data.promptFeedback&&data.promptFeedback.blockReason)||(cand&&cand.finishReason)||'réponse vide')};
-return cand.content.parts.map(function(p){return p.text||''}).join('')}}
+var t=Math.max(Date.now(),lastReq+GAP);
 
-function msgFor(e){var c=e&&e.code;
-if(c==='daily')return 'Limite du jour atteinte. Tes pages déjà traduites sont gardées : touche « Reprendre » demain (le quota se remet à zéro vers 9 h en France), ou active la facturation sur ton projet Google pour supprimer cette limite.';
-if(c==='key')return 'Clé API refusée. Vérifie qu’elle est correcte et active.'+(e.msg?' ('+e.msg+')':'');
-if(c==='rate'||c==='busy')return 'L’API est surchargée. Touche « Reprendre » dans quelques minutes.';
-return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+((e&&(e.msg||e.message))||'inconnue')+'. Touche « Reprendre » pour réessayer.'}
+lastReq=t;
 
-async function run(){
-var apiKey=$('apikey').value.trim();
-if(!apiKey){say('Entre ta clé API Gemini.');return}
-if(busy)return;
-busy=true;stopF=false;
-var resume=!!pending,model=$('mdl').value;
-if(!resume){res=[];fails=[];$('out').innerHTML=''}
-$('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
-var items=[];
-if(pdfDoc){var a=Math.max(1,+$('p1').value||1),b=Math.min(pdfDoc.numPages,+$('p2').value||a);for(var p=a;p<=b;p++)items.push({p:p})}
-else imgs.forEach(function(f,i){items.push({f:f,n:i+1})});
-var start=resume?pending.i:0;pending=null;
-var i;
-try{
-try{await document.fonts.load(FONT)}catch(e){}
-for(i=start;i<items.length&&!stopF;i++){
-var label=items[i].p||items[i].n;
-$('st').textContent='Traduction '+(i+1)+' / '+items.length+' (page '+label+')...';
-var n0=res.length,cs=items[i].p?await pageCanvas(items[i].p):await imgCanvases(items[i].f);
-try{
-for(var j=0;j<cs.length;j++){var c=cs[j],url;
-try{var txt=await callGemini(apiKey,model,PR.replace('{L}',$('src').value),await blobOf(c));url=paint(c,parse(txt))}
-catch(e){if(e&&e.code==='blocked'){blockWhy=e.msg;if(fails.indexOf(label)<0)fails.push(label);url=c.toDataURL('image/jpeg',.88)}else throw e}
-res.push(url);var im=new Image();im.src=url;im.alt='Page '+label;$('out').appendChild(im)}
-}catch(e){res.length=n0;while($('out').children.length>n0)$('out').removeChild($('out').lastChild);throw e}
+var w=t-Date.now();
+
+if(w>0)await sleep(w)
+
 }
-if(stopF&&i<items.length){pending={i:i};$('st').textContent='Arrêté. Touche « Reprendre » pour continuer.'}
-else $('st').textContent='Terminé : '+res.length+' page'+(res.length>1?'s':'')+'.';
-if(fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+' (raison : '+blockWhy+'). Relance-les en réglant « De la page » et « À la page ».');
-}catch(e){pending={i:i};say(msgFor(e));$('st').textContent=res.length+' page'+(res.length>1?'s':'')+' traduite'+(res.length>1?'s':'')+'.'}
-$('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
 
-$('go').onclick=run;
-$('stop').onclick=function(){stopF=true};
+// APPEL GEMINI
+async function callGemini(apiKey,model,promptText,blobImage){
 
-$('dl').onclick=async function(){
+var b64=await new Promise(function(ok,ko){
+
+var r=new FileReader();
+
+r.onload=function(){
+ok(r.result.split(',')[1])
+};
+
+r.onerror=ko;
+
+r.readAsDataURL(blobImage)
+
+});
+
+var url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent';
+
+var payload={
+contents:[{
+parts:[
+{text:promptText},
+{inline_data:{mime_type:'image/jpeg',data:b64}}
+]
+}],
+generationConfig:{
+responseMimeType:'application/json',
+temperature:0.2
+}
+};
+
+if(/2\.5/.test(model))
+payload.generationConfig.thinkingConfig={thinkingBudget:0};
+
+var waits=[20000,30000,45000,60000,90000];
+
+for(var attempt=0;;attempt++){
+
+await pace();
+
+var resp=await fetch(url,{
+method:'POST',
+headers:{
+'Content-Type':'application/json',
+'x-goog-api-key':apiKey
+},
+body:JSON.stringify(payload)
+});
+
+if(resp.status===429||resp.status===503){
+
+var body='';
+
+try{body=await resp.text()}catch(e){}
+
+if(resp.status===429&&/limit:\s*0/i.test(body))
+throw{code:'nofree',msg:body.slice(0,200)};
+
+if(resp.status===429&&/PerDay|per day|daily/i.test(body))
+throw{code:'daily'};
+
+if(attempt>=waits.length)
+throw{code:resp.status===429?'rate':'busy'};
+
+var w=waits[attempt];
+
+$('st').textContent='API occupée, nouvelle tentative dans '+(w/1000)+' s...';
+
+await sleep(w);
+
+continue
+
+}
+
+if(!resp.ok){
+
+var t2='';
+
+try{t2=await resp.text()}catch(e){}
+
+var em=t2;
+
 try{
-var J=window.jspdf.jsPDF,doc=null;
-for(var i=0;i<res.length;i++){var im=new Image();im.src=res[i];await im.decode();var w=im.naturalWidth,h=im.naturalHeight;
-if(!doc)doc=new J({unit:'px',format:[w,h],orientation:w>h?'l':'p',hotfixes:['px_scaling']});else doc.addPage([w,h],w>h?'l':'p');
-doc.addImage(res[i],'JPEG',0,0,w,h)}
-var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download='manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);say('PDF enregistré.')
-}catch(err){say('Le PDF n’a pas pu être créé.')}};
+em=JSON.parse(t2).error.message||t2
+}catch(e){}
+
+if(resp.status===400&&/think/i.test(em)&&payload.generationConfig.thinkingConfig){
+
+delete payload.generationConfig.thinkingConfig;
+
+continue
+
+}
+
+if(/API key|API_KEY|permission/i.test(em)||resp.status===401||resp.status===403)
+throw{code:'key',msg:em};
+
+throw{code:'http',status:resp.status,msg:em}
+
+}
+
+var data=await resp.json();
+
+var cand=data.candidates&&data.candidates[0];
+
+if(data.promptFeedback&&data.promptFeedback.blockReason)
+throw{code:'blocked',msg:'Google a bloqué la demande : '+data.promptFeedback.blockReason};
+
+if(!cand)
+throw{code:'blocked',msg:'Gemini n’a renvoyé aucun candidat.'};
+
+if(cand.finishReason&&cand.finishReason!=='STOP')
+throw{code:'blocked',msg:'Fin de réponse Gemini : '+cand.finishReason};
+
+if(!cand.content||!cand.content.parts||!cand.content.parts.length)
+throw{code:'blocked',msg:'Gemini a renvoyé un contenu vide.'};
+
+var answer=cand.content.parts.map(function(p){
+return p.text||''
+}).join('');
+
+if(!answer.trim())
+throw{code:'empty',msg:'Gemini a renvoyé une réponse sans texte.'};
+
+return answer
+
+}
+
+}
+
+// MESSAGES D'ERREUR
+function msgFor(e){
+
+var c=e&&e.code;
+
+if(c==='nofree')
+return 'Ce modèle n’a pas de quota gratuit sur ton compte. Choisis Flash-Lite, ou active la facturation sur ton projet Google.';
+
+if(e&&e.status===404)
+return 'Ce modèle n’est plus disponible. Choisis-en un autre dans « Modèle ». ('+(e.msg||'')+')';
+
+if(c==='daily')
+return 'Limite du jour atteinte. Tes pages déjà traduites sont gardées : touche « Reprendre » demain, ou active la facturation sur ton projet Google pour supprimer cette limite.';
+
+if(c==='key')
+return 'Clé API refusée. Vérifie qu’elle est correcte et active.'+(e.msg?' ('+e.msg+')':'');
+
+if(c==='rate'||c==='busy')
+return 'L’API est surchargée. Touche « Reprendre » dans quelques minutes.';
+
+return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+((e&&(e.msg||e.message))||'inconnue')+'. Touche « Reprendre » pour réessayer.'
+
+}
+
+// TRAITEMENT D'UNE PAGE
+async function doItem(it,label,apiKey,model,src){
+
+var cs=it.p?await pageCanvas(it.p):await imgCanvases(it.f);
+
+var out=[];
+
+for(var j=0;j<cs.length;j++){
+
+var c=cs[j],url;
+
+try{
+
+var txt=await callGemini(
+apiKey,
+model,
+PR.replace('{L}',src),
+await blobOf(c)
+);
+
+url=paint(c,parse(txt))
+
+}catch(e){
+
+if(e&&(e.code==='blocked'||e.code==='empty'||e.code==='format')){
+
+blockWhy=e.msg||e.message||e.code;
+
+if(fails.indexOf(label)<0)
+fails.push(label);
+
+url=c.toDataURL('image/jpeg',.88)
+
+}else{
+
+throw e
+
+}
+
+}
+
+out.push(url)
+
+}
+
+return out
+
+}
+
+// LANCEMENT DE LA TRADUCTION
+async function run(){
+
+var apiKey=$('apikey').value.trim();
+
+if(!apiKey){
+say('Entre ta clé API Gemini.');
+return
+}
+
+if(busy)return;
+
+if(pdfDoc){
+
+var pa=+$('p1').value||1;
+var pb=+$('p2').value||pdfDoc.numPages;
+
+if(pa<1||pb<pa||pb>pdfDoc.numPages){
+
+say('Plage invalide : choisis des pages entre 1 et '+pdfDoc.numPages+', avec « De la page » inférieur ou égal à « À la page ».');
+
+return
+
+}
+
+}
+
+busy=true;
+stopF=false;
+
+var resume=!!pending;
+
+var model=$('mcus').value.trim()||$('mdl').value;
+
+var src=$('src').value;
+
+var fast=$('spd').value==='fast';
+
+var conc=fast?4:1;
+
+GAP=fast?300:(model.indexOf('lite')>=0?4500:6500);
+
+if(!resume){
+
+res=[];
+fails=[];
+blockWhy='';
+$('out').innerHTML=''
+
+}
+
+$('dl').hidden=true;
+$('go').disabled=true;
+$('stop').hidden=false;
+
+say('');
+
+var items=[];
+
+if(pdfDoc){
+
+var a=Math.max(1,+$('p1').value||1);
+var b=Math.min(pdfDoc.numPages,+$('p2').value||a);
+
+for(var p=a;p<=b;p++)
+items.push({p:p})
+
+}else{
+
+imgs.forEach(function(f,i){
+items.push({f:f,n:i+1})
+})
+
+}
+
+var start=resume?Math.min(pending.i,items.length):0;
+
+pending=null;
+
+var next=start;
+var flush=start;
+var done={};
+var fatal=null;
+
+try{
+await document.fonts.load(FONT)
+}catch(e){}
+
+function show(){
+
+while(done[flush]){
+
+var lb=items[flush].p||items[flush].n;
+
+done[flush].forEach(function(u){
+
+res.push(u);
+
+var im=new Image();
+
+im.src=u;
+im.alt='Page '+lb;
+
+$('out').appendChild(im)
+
+});
+
+delete done[flush];
+
+flush++
+
+}
+
+$('st').textContent='Traduction : '+(flush-start)+' / '+(items.length-start)+' pages terminées...'
+
+}
+
+async function worker(){
+
+while(!stopF&&!fatal){
+
+var i=next++;
+
+if(i>=items.length)return;
+
+try{
+
+done[i]=await doItem(
+items[i],
+items[i].p||items[i].n,
+apiKey,
+model,
+src
+);
+
+show()
+
+}catch(e){
+
+fatal=fatal||e;
+
+return
+
+}
+
+}
+
+}
+
+$('st').textContent='Traduction en cours...';
+
+var ws=[];
+
+for(var w=0;w<conc;w++)
+ws.push(worker());
+
+await Promise.all(ws);
+
+var n=res.length+' page'+(res.length>1?'s':'');
+
+if(fatal){
+
+pending={i:flush};
+
+say(msgFor(fatal));
+
+$('st').textContent=n+' traduite'+(res.length>1?'s':'' )+'.'
+
+}else if(stopF&&flush<items.length){
+
+pending={i:flush};
+
+$('st').textContent='Arrêté : '+n+'. Touche « Reprendre » pour continuer.'
+
+}else{
+
+$('st').textContent='Terminé : '+n+'.'
+
+}
+
+if(!fatal&&fails.length){
+
+say(
+'Pages non traduites : '+fails.join(', ')+
+'. Motif exact : '+blockWhy+
+'. Les pages originales sont conservées, mais elles ne sont pas traduites.'
+)
+
+}
+
+$('dl').hidden=!res.length;
+
+setGo();
+
+busy=false;
+
+$('go').disabled=false;
+
+$('stop').hidden=true
+
+}
+
+// BOUTONS
+$('go').onclick=run;
+
+$('stop').onclick=function(){
+stopF=true
+};
+
+// EXPORT PDF
+$('dl').onclick=async function(){
+
+try{
+
+var J=window.jspdf.jsPDF;
+
+var doc=null;
+
+for(var i=0;i<res.length;i++){
+
+var im=new Image();
+
+im.src=res[i];
+
+await im.decode();
+
+var w=im.naturalWidth;
+var h=im.naturalHeight;
+
+if(!doc){
+
+doc=new J({
+unit:'px',
+format:[w,h],
+orientation:w>h?'l':'p',
+hotfixes:['px_scaling']
+});
+
+}else{
+
+doc.addPage([w,h],w>h?'l':'p')
+
+}
+
+doc.addImage(res[i],'JPEG',0,0,w,h)
+
+}
+
+var u=URL.createObjectURL(doc.output('blob'));
+
+var a=document.createElement('a');
+
+a.href=u;
+a.download='manga-fr.pdf';
+
+document.body.appendChild(a);
+
+a.click();
+
+document.body.removeChild(a);
+
+say('PDF enregistré.')
+
+}catch(err){
+
+say('Le PDF n’a pas pu être créé.')
+
+}
+
+};
+
 </script>
 </body>
 </html>
