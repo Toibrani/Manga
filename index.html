@@ -35,7 +35,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <body>
 <main>
 <h1>MANGA FR</h1>
-<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 6</b></p>
+<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 7</b></p>
 
 <div class="card">
 <div class="mut">Clé API Gemini</div>
@@ -117,31 +117,41 @@ async function pace(){var t=Math.max(Date.now(),lastReq+GAP);lastReq=t;var w=t-D
 
 function errMsg(t){try{var j=JSON.parse(t);return (j.error&&j.error.message)||t.slice(0,300)}catch(e){return String(t).slice(0,300)}}
 function b64of(blob){return new Promise(function(ok,ko){var r=new FileReader();r.onload=function(){ok(r.result.split(',')[1])};r.onerror=ko;r.readAsDataURL(blob)})}
-async function gen(apiKey,model,parts,json){
-var url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+var MODELS=[],OVR='',TRIED=[];
+function nextModel(m){if(TRIED.indexOf(m)<0)TRIED.push(m);var c=MODELS.filter(function(x){return TRIED.indexOf(x)<0}),st=c.filter(function(x){return !/preview|exp/.test(x)});
+return st.filter(function(x){return /lite/.test(x)})[0]||st[0]||c[0]||null}
+function sleepShow(ms,label){return new Promise(function(r){var end=Date.now()+ms,iv=setInterval(function(){var l=Math.ceil((end-Date.now())/1000);if(l<=0){clearInterval(iv);r()}else $('st').textContent=label+' '+l+' s...'},500);$('st').textContent=label+' '+Math.ceil(ms/1000)+' s...'})}
+async function gen(apiKey,model0,parts,json){
+var model=OVR||model0;
 var cats=['HARM_CATEGORY_HARASSMENT','HARM_CATEGORY_HATE_SPEECH','HARM_CATEGORY_SEXUALLY_EXPLICIT','HARM_CATEGORY_DANGEROUS_CONTENT'];
 var payload={contents:[{role:'user',parts:parts}],safetySettings:cats.map(function(c){return{category:c,threshold:'BLOCK_NONE'}}),generationConfig:{}};
 if(json)payload.generationConfig.responseMimeType='application/json';
-if(/gemini-3/.test(model))payload.generationConfig.thinkingConfig={thinkingLevel:'low'};else if(/2\.5/.test(model))payload.generationConfig.thinkingConfig={thinkingBudget:0};
-var waits=[20000,30000,45000,60000,90000],n429=0,fixes=0;
+function setThink(){delete payload.generationConfig.thinkingConfig;if(/gemini-3/.test(model))payload.generationConfig.thinkingConfig={thinkingLevel:'low'};else if(/2\.5/.test(model))payload.generationConfig.thinkingConfig={thinkingBudget:0}}
+setThink();
+var waits=[15000,25000,40000,60000,90000],n429=0,fixes=0;
+function swap(why){var nx=nextModel(model);if(!nx)return false;model=nx;OVR=nx;setThink();n429=0;say('Bascule automatique sur '+nx+' ('+why+').');try{$('mdl').value=nx}catch(e){}return true}
 for(;;){
 await pace();
+var url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
 var resp;
 try{resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(payload)})}
 catch(net){throw{code:'network',msg:'Connexion impossible vers Google : '+(net&&net.message?net.message:'vérifie ta connexion')}}
 if(resp.status===429||resp.status===503){
 var body='';try{body=await resp.text()}catch(e){}
-if(resp.status===429&&/limit:\s*0/i.test(body))throw{code:'nofree',msg:errMsg(body)};
-if(resp.status===429&&/PerDay|per day|daily/i.test(body))throw{code:'daily',msg:errMsg(body)};
+if(resp.status===429&&/limit:\s*0/i.test(body)){if(swap('pas de quota gratuit pour ce modèle'))continue;throw{code:'nofree',msg:errMsg(body)}}
+if(resp.status===429&&/PerDay|per day|daily/i.test(body)){if(swap('quota du jour atteint'))continue;throw{code:'daily',msg:errMsg(body)}}
+GAP=Math.min(Math.round(GAP*1.6+1000),30000);
+if(n429>=2&&swap('modèle saturé'))continue;
 if(n429>=waits.length)throw{code:resp.status===429?'rate':'busy',msg:errMsg(body)};
-var w=waits[n429++];$('st').textContent='Google est occupé. Nouvelle tentative dans '+(w/1000)+' s...';await sleep(w);continue}
+var rd=body.match(/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/),w=Math.max(waits[n429],rd?Math.ceil(parseFloat(rd[1])*1000)+1000:0);n429++;
+await sleepShow(Math.min(w,120000),'Google est occupé ('+model+'). Nouvelle tentative dans');continue}
 if(!resp.ok){
 var raw='';try{raw=await resp.text()}catch(e){}var em=errMsg(raw);
 if(resp.status===400&&fixes<3){
 if(/think/i.test(em)&&payload.generationConfig.thinkingConfig){delete payload.generationConfig.thinkingConfig;fixes++;continue}
 if(/safety|harm/i.test(em)&&payload.safetySettings){delete payload.safetySettings;fixes++;continue}}
 if(resp.status===401||resp.status===403||/API key|API_KEY/i.test(em))throw{code:'key',status:resp.status,msg:em};
-if(resp.status===404)throw{code:'model',status:404,msg:em};
+if(resp.status===404){if(swap('modèle introuvable'))continue;throw{code:'model',status:404,msg:em}}
 throw{code:'http',status:resp.status,msg:em}}
 var data=await resp.json(),cand=data.candidates&&data.candidates[0];
 if(data.promptFeedback&&data.promptFeedback.blockReason)throw{code:'blocked',msg:String(data.promptFeedback.blockReason)};
@@ -157,7 +167,7 @@ if(c==='daily')return 'Quota du jour atteint pour ce modèle. Choisis un autre m
 if(c==='key')return 'Clé refusée par Google'+(e.status?' (HTTP '+e.status+')':'')+'. Vérifie-la dans Google AI Studio. '+m;
 if(c==='model')return 'Modèle introuvable pour ta clé. Touche « Tester ma clé et le modèle » pour recharger la liste des modèles disponibles. '+m;
 if(c==='network')return m||'Connexion impossible.';
-if(c==='rate'||c==='busy')return 'Google est surchargé ou ta limite par minute est atteinte. Touche « Reprendre » dans quelques minutes. '+m;
+if(c==='rate'||c==='busy')return 'Google limite fortement ton compte en ce moment, même après plusieurs essais. Passe en mode « Prudent », choisis un modèle « lite » dans la liste, attends 5 minutes puis touche « Reprendre ». '+m;
 if(c==='blocked')return 'Réponse bloquée par Google : '+m;
 return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+(m||'inconnue')}
 async function pack(c){
@@ -180,7 +190,7 @@ if(!apiKey){say('Entre ta clé API Gemini.');return}
 if(busy)return;
 busy=true;stopF=false;
 var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?4:1;
-GAP=fast?300:(model.indexOf('lite')>=0?4500:6500);
+GAP=fast?300:(model.indexOf('lite')>=0?4500:6500);OVR='';TRIED=[];try{if(!MODELS.length)await loadModels()}catch(e){}
 if(!resume){res=[];fails=[];$('out').innerHTML=''}
 $('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
 var items=[];
@@ -212,7 +222,7 @@ if(!r.ok){var t='';try{t=await r.text()}catch(e){}throw{code:(r.status===400||r.
 var d=await r.json(),ms=(d.models||[]).filter(function(m){return (m.supportedGenerationMethods||[]).join().indexOf('generateContent')>=0&&/flash/i.test(m.name)&&!/image|tts|live|audio|native|embed|robotics|computer|latest/i.test(m.name)}).map(function(m){return m.name.replace('models/','')});
 function ver(n){var x=n.match(/gemini-(\d+(?:\.\d+)?)/);return x?parseFloat(x[1]):0}
 ms.sort(function(a,b){return ver(b)-ver(a)||(/preview|exp/.test(a)?1:0)-(/preview|exp/.test(b)?1:0)||(/lite/.test(a)?1:0)-(/lite/.test(b)?1:0)||(a<b?-1:1)});
-if(ms.length)fillModels(ms);
+if(ms.length){MODELS=ms;fillModels(ms)}
 return ms}
 function fillModels(ms){var sel=$('mdl'),keep='';try{keep=localStorage.getItem('gemini_model')||''}catch(e){}
 sel.innerHTML=ms.map(function(m,i){return '<option value="'+m+'">'+m+(i===0?' (recommandé)':'')+(/lite/.test(m)?' · léger':'')+'</option>'}).join('');
@@ -243,244 +253,6 @@ if(!doc)doc=new J({unit:'px',format:[w,h],orientation:w>h?'l':'p',hotfixes:['px_
 doc.addImage(du,'JPEG',0,0,w,h);du=null;say('Création du PDF : '+(i+1)+' / '+res.length)}
 var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download='manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);say('PDF enregistré.')
 }catch(err){say('Le PDF n’a pas pu être créé : '+(err&&err.message?err.message:'erreur inconnue'))}};
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<style>
-:root{--bg:#FAF8F3;--ink:#16141A;--mut:#6D6874;--card:#fff;--line:#16141A;--acc:#E5195E;--on:#fff;
-box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15131A;--ink:#F4F1F8;--mut:#A39DB0;--card:#211E29;--line:#F4F1F8;--acc:#FF4D86;--on:#15131A}}
-:root[data-theme="dark"]{--bg:#15131A;--ink:#F4F1F8;--mut:#A39DB0;--card:#211E29;--line:#F4F1F8;--acc:#FF4D86;--on:#15131A}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:600px;margin:0 auto;padding:20px 16px 48px}
-h1{font-family:Bangers,Impact,sans-serif;font-size:2.4rem;letter-spacing:.04em;margin:0;font-weight:400}
-.mut{color:var(--mut);font-size:.92rem}
-.card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:14px;margin:14px 0}
-.drop{display:block;text-align:center;border:2.5px dashed var(--line);border-radius:16px;padding:26px 14px;cursor:pointer;font-weight:700}
-.btn{width:100%;padding:14px;border:2px solid var(--line);border-radius:12px;background:var(--acc);color:var(--on);font:inherit;font-weight:800;cursor:pointer;margin-top:10px}
-.btn.alt{background:transparent;color:var(--ink)}
-.btn:disabled{opacity:.5}
-select,input[type=number],input[type=password],input[type=text]{font:inherit;padding:11px;border-radius:10px;border:2px solid var(--line);background:var(--card);color:var(--ink);width:100%}
-.g{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-label.c{display:flex;gap:10px;align-items:center;margin-top:12px}
-button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within{outline:3px solid var(--acc);outline-offset:2px}
-#out img{display:block;width:100%;border:2px solid var(--line);border-radius:6px;margin:12px 0}
-.st{font-weight:700;margin-top:8px}
-.row{display:flex;gap:8px}
-</style>
-</head>
-<body>
-<main>
-<h1>MANGA FR</h1>
-<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 6</b></p>
-
-<div class="card">
-<div class="mut">Clé API Gemini</div>
-<div class="row" style="margin-top:6px">
-<input id="apikey" type="password" placeholder="AIzaSy...">
-<button class="btn alt" id="tkey" style="width:auto;margin-top:0;padding:0 14px">Voir</button>
-</div>
-<div class="mut" style="font-size:.8rem;margin-top:4px">Sauvegardée seulement sur cet appareil.</div><button class="btn alt" id="test">Tester ma clé et le modèle</button><div class="mut" id="tres" style="margin-top:8px"></div>
-</div>
-
-<label class="drop" for="f"><span id="fl">Choisir un PDF ou des images</span><br><span class="mut">Un PDF, ou plusieurs images</span></label>
-<input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
-<div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
-<div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
-<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select><input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px"></div><div style="margin-top:10px"><div class="mut">Vitesse</div><select id="spd"><option value="safe">Compte gratuit : prudent (1 page à la fois)</option><option value="fast">Compte payant : rapide (4 pages à la fois)</option></select></div>
-<div style="margin-top:10px"><div class="mut">Contexte de l’œuvre (facultatif)</div><input id="ctx" type="text" placeholder="Ex : seinen violent, argot de rue, personnages : Kenji, Aya"></div><label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
-<button class="btn" id="go" disabled>Traduire</button>
-<button class="btn alt" id="stop" hidden>Arrêter</button>
-<p class="mut">Garde l’appli ouverte et l’écran allumé pendant la traduction.</p><div class="st" id="st"></div>
-<div id="out"></div>
-<button class="btn" id="dl" hidden>Télécharger en PDF</button>
-<p class="mut" id="msg"></p>
-</main>
-<script>
-function $(i){return document.getElementById(i)}
-var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,GAP=6500,blockWhy='',FONT='700 20px "Comic Neue"';
-function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
-function say(t){$('msg').textContent=t||''}
-
-// Clé API stockée localement
-try{if(localStorage.getItem('gemini_key'))$('apikey').value=localStorage.getItem('gemini_key')}catch(e){}
-$('apikey').oninput=function(){try{localStorage.setItem('gemini_key',this.value.trim())}catch(e){}};
-$('tkey').onclick=function(){$('apikey').type=$('apikey').type==='password'?'text':'password';this.textContent=$('apikey').type==='password'?'Voir':'Cacher'};
-
-try{pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'}catch(e){}
-
-function setGo(){$('go').textContent=pending?'Reprendre':'Traduire'}
-$('f').onchange=async function(e){
-var a=Array.prototype.slice.call(e.target.files);pdfDoc=null;imgs=[];res=[];fails=[];pending=null;setGo();$('out').innerHTML='';$('dl').hidden=true;$('rg').hidden=true;say('');$('st').textContent='';
-if(!a.length){$('go').disabled=true;return}
-var pf=a.filter(function(x){return x.type==='application/pdf'||/\.pdf$/i.test(x.name)})[0];
-if(pf){try{pdfDoc=await pdfjsLib.getDocument({data:await pf.arrayBuffer()}).promise;var n=pdfDoc.numPages;$('p1').value=1;$('p2').value=n;$('p1').max=$('p2').max=n;$('pn').textContent='Ce PDF a '+n+' pages : tout le PDF est sélectionné. Tu peux réduire la plage si tu veux.';$('rg').hidden=false;$('fl').textContent=pf.name}catch(x){say('Impossible de lire ce PDF.');pdfDoc=null}}
-else{imgs=a.sort(function(x,y){return x.name<y.name?-1:1});$('fl').textContent=imgs.length+' image'+(imgs.length>1?'s':'')}
-$('go').disabled=!(pdfDoc||imgs.length)};
-
-function blobOf(c){return new Promise(function(r){c.toBlob(r,'image/jpeg',.85)})}
-async function pageCanvas(p){var pg=await pdfDoc.getPage(p),v0=pg.getViewport({scale:1}),v=pg.getViewport({scale:Math.min(2,1000/v0.width)}),c=document.createElement('canvas');c.width=Math.round(v.width);c.height=Math.round(v.height);await pg.render({canvasContext:c.getContext('2d'),viewport:v}).promise;return[c]}
-async function imgCanvases(f){var b=await createImageBitmap(f),sc=Math.min(1,1000/b.width),w=Math.round(b.width*sc),H=Math.round(b.height*sc),sh=Math.round(w*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
-for(var i=0;i<n;i++){var h=Math.min(sh,H-i*sh),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(b,0,i*sh/sc,b.width,h/sc,0,0,w,h);o.push(c)}return o}
-
-function parse(t){
-if(typeof t!=='string'||!t.trim())throw{code:'format',msg:'Gemini a renvoyé une réponse vide.'};
-var x=t.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim(),v;
-try{v=JSON.parse(x)}catch(e){var i=x.indexOf('['),j=x.lastIndexOf(']');if(i<0||j<i)throw{code:'format',msg:'Réponse JSON introuvable.'};try{v=JSON.parse(x.slice(i,j+1))}catch(y){throw{code:'format',msg:'JSON invalide : '+y.message}}}
-if(v&&!Array.isArray(v)&&Array.isArray(v.items))v=v.items;
-if(!Array.isArray(v))throw{code:'format',msg:'La réponse ne contient pas de liste de bulles.'};
-return v}
-
-function median(ctx,x,y,w,h){x=Math.max(0,Math.floor(x));y=Math.max(0,Math.floor(y));w=Math.max(2,Math.min(ctx.canvas.width-x,Math.ceil(w)));h=Math.max(2,Math.min(ctx.canvas.height-y,Math.ceil(h)));var d=ctx.getImageData(x,y,w,h).data,p=[];
-function add(i,j){var k=(j*w+i)*4;p.push([d[k],d[k+1],d[k+2],.3*d[k]+.59*d[k+1]+.11*d[k+2]])}
-for(var i=0;i<w;i++){add(i,0);add(i,h-1);if(h>3){add(i,1);add(i,h-2)}}for(var j=0;j<h;j++){add(0,j);add(w-1,j);if(w>3){add(1,j);add(w-2,j)}}
-p.sort(function(a,b){return a[3]-b[3]});return p[Math.floor(p.length/2)]}
-
-function wrap(ctx,t,mw){var ws=t.split(/\s+/),L=[],cur='';ws.forEach(function(w){var s=cur?cur+' '+w:w;if(cur&&ctx.measureText(s).width>mw){L.push(cur);cur=w}else cur=s});if(cur)L.push(cur);return L}
-function fit(ctx,t,w,h){var s=Math.min(Math.round(h),72),L=[t];for(;s>=10;s--){ctx.font='700 '+s+'px "Comic Neue","Comic Sans MS",sans-serif';L=wrap(ctx,t,w);if(L.length*s*1.12<=h)return{s:s,L:L}}ctx.font='700 10px "Comic Neue","Comic Sans MS",sans-serif';return{s:10,L:wrap(ctx,t,w)}}
-
-// CORRECTION : Gemini renvoie les rectangles au format [ymin, xmin, ymax, xmax] (0 à 1000)
-function paint(c,arr){var ctx=c.getContext('2d'),W=c.width,H=c.height,pad=Math.round(W*[.002,.005,.01][+$('mg').value]),up=$('up').checked;
-arr.forEach(function(it){var bx=it&&(it.box||it.box_2d);if(!bx||bx.length<4||!it.fr)return;var b=bx.map(Number),x1=b[1]/1000*W-pad,y1=b[0]/1000*H-pad,x2=b[3]/1000*W+pad,y2=b[2]/1000*H+pad;if(!(x2>x1+4&&y2>y1+4))return;
-var col=median(ctx,x1-3,y1-3,x2-x1+6,y2-y1+6);ctx.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';ctx.fillRect(x1,y1,x2-x1,y2-y1);
-var t=up?String(it.fr).toUpperCase():String(it.fr),f=fit(ctx,t,(x2-x1)*1.0,y2-y1),lh=f.s*1.12;ctx.fillStyle=col[3]>128?'#111':'#fff';ctx.textAlign='center';ctx.textBaseline='middle';
-f.L.forEach(function(l,i){ctx.fillText(l,(x1+x2)/2,(y1+y2)/2-(f.L.length-1)*lh/2+i*lh)})});
-return c}
-
-var PR='Tu es traducteur professionnel de mangas et webtoons. Repère chaque bulle de dialogue, pensée et cartouche de narration contenant du texte. Langue d’origine : {L}. Ignore les onomatopées dessinées, les signatures et les filigranes. Pour chaque texte, donne le rectangle qui entoure uniquement les lignes de texte (pas le contour de la bulle), en coordonnées de 0 à 1000 par rapport à la hauteur et à la largeur de l’image, dans cet ordre : [ymin,xmin,ymax,xmax]. Traduis en français naturel, comme le dirait un francophone, pas mot à mot. Garde exactement le même registre : l’humour, l’ironie, le sarcasme, les jeux de mots (adapte-les pour qu’ils fonctionnent en français), l’argot et la vulgarité restent au même niveau, sans rien censurer ni adoucir. Choisis le tutoiement ou le vouvoiement selon la relation entre les personnages. Garde les noms propres. N’ajoute aucune note de traducteur. Reste proche de la longueur de l’original pour que ça tienne dans la bulle. Réponds uniquement avec un tableau JSON : [{"box":[ymin,xmin,ymax,xmax],"fr":"traduction"}]. S’il n’y a aucun texte, réponds [].';
-
-// Cadence : on espace les requêtes pour rester sous la limite par minute
-async function pace(){var t=Math.max(Date.now(),lastReq+GAP);lastReq=t;var w=t-Date.now();if(w>0)await sleep(w)}
-
-function errMsg(t){try{var j=JSON.parse(t);return (j.error&&j.error.message)||t.slice(0,300)}catch(e){return String(t).slice(0,300)}}
-function b64of(blob){return new Promise(function(ok,ko){var r=new FileReader();r.onload=function(){ok(r.result.split(',')[1])};r.onerror=ko;r.readAsDataURL(blob)})}
-async function gen(apiKey,model,parts,json){
-var url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
-var cats=['HARM_CATEGORY_HARASSMENT','HARM_CATEGORY_HATE_SPEECH','HARM_CATEGORY_SEXUALLY_EXPLICIT','HARM_CATEGORY_DANGEROUS_CONTENT'];
-var payload={contents:[{role:'user',parts:parts}],safetySettings:cats.map(function(c){return{category:c,threshold:'BLOCK_NONE'}}),generationConfig:{}};
-if(json)payload.generationConfig.responseMimeType='application/json';
-if(/gemini-3/.test(model))payload.generationConfig.thinkingConfig={thinkingLevel:'low'};else if(/2\.5/.test(model))payload.generationConfig.thinkingConfig={thinkingBudget:0};
-var waits=[20000,30000,45000,60000,90000],n429=0,fixes=0;
-for(;;){
-await pace();
-var resp;
-try{resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(payload)})}
-catch(net){throw{code:'network',msg:'Connexion impossible vers Google : '+(net&&net.message?net.message:'vérifie ta connexion')}}
-if(resp.status===429||resp.status===503){
-var body='';try{body=await resp.text()}catch(e){}
-if(resp.status===429&&/limit:\s*0/i.test(body))throw{code:'nofree',msg:errMsg(body)};
-if(resp.status===429&&/PerDay|per day|daily/i.test(body))throw{code:'daily',msg:errMsg(body)};
-if(n429>=waits.length)throw{code:resp.status===429?'rate':'busy',msg:errMsg(body)};
-var w=waits[n429++];$('st').textContent='Google est occupé. Nouvelle tentative dans '+(w/1000)+' s...';await sleep(w);continue}
-if(!resp.ok){
-var raw='';try{raw=await resp.text()}catch(e){}var em=errMsg(raw);
-if(resp.status===400&&fixes<3){
-if(/think/i.test(em)&&payload.generationConfig.thinkingConfig){delete payload.generationConfig.thinkingConfig;fixes++;continue}
-if(/safety|harm/i.test(em)&&payload.safetySettings){delete payload.safetySettings;fixes++;continue}}
-if(resp.status===401||resp.status===403||/API key|API_KEY/i.test(em))throw{code:'key',status:resp.status,msg:em};
-if(resp.status===404)throw{code:'model',status:404,msg:em};
-throw{code:'http',status:resp.status,msg:em}}
-var data=await resp.json(),cand=data.candidates&&data.candidates[0];
-if(data.promptFeedback&&data.promptFeedback.blockReason)throw{code:'blocked',msg:String(data.promptFeedback.blockReason)};
-if(!cand||!cand.content||!cand.content.parts)throw{code:'blocked',msg:String((cand&&cand.finishReason)||'réponse vide')};
-var text=cand.content.parts.filter(function(p){return !p.thought}).map(function(p){return p.text||''}).join('');
-if(!text.trim())throw{code:'blocked',msg:String(cand.finishReason||'réponse vide')};
-return text}}
-async function callGemini(apiKey,model,promptText,blobImage){return gen(apiKey,model,[{text:promptText},{inline_data:{mime_type:'image/jpeg',data:await b64of(blobImage)}}],true)}
-
-function msgFor(e){var c=e&&e.code,m=(e&&(e.msg||e.message))||'';
-if(c==='nofree')return 'Ce modèle n’a pas de quota gratuit sur ton compte. Choisis un modèle « lite » dans la liste, ou active la facturation sur ton projet Google.';
-if(c==='daily')return 'Quota du jour atteint pour ce modèle. Choisis un autre modèle dans la liste, reviens demain (vers 9 h en France), ou active la facturation.';
-if(c==='key')return 'Clé refusée par Google'+(e.status?' (HTTP '+e.status+')':'')+'. Vérifie-la dans Google AI Studio. '+m;
-if(c==='model')return 'Modèle introuvable pour ta clé. Touche « Tester ma clé et le modèle » pour recharger la liste des modèles disponibles. '+m;
-if(c==='network')return m||'Connexion impossible.';
-if(c==='rate'||c==='busy')return 'Google est surchargé ou ta limite par minute est atteinte. Touche « Reprendre » dans quelques minutes. '+m;
-if(c==='blocked')return 'Réponse bloquée par Google : '+m;
-return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+(m||'inconnue')}
-async function pack(c){
-var f=await new Promise(function(r){c.toBlob(r,'image/jpeg',.88)});
-var t=document.createElement('canvas'),k=Math.min(1,520/c.width);t.width=Math.max(1,Math.round(c.width*k));t.height=Math.max(1,Math.round(c.height*k));
-t.getContext('2d').drawImage(c,0,0,t.width,t.height);
-var tb=await new Promise(function(r){t.toBlob(r,'image/jpeg',.8)});t.width=t.height=0;
-return{f:f,t:URL.createObjectURL(tb)}}
-async function doItem(it,label,apiKey,model,src){
-var cs=it.p?await pageCanvas(it.p):await imgCanvases(it.f),out=[],cx=($('ctx').value||'').trim();
-for(var j=0;j<cs.length;j++){var c=cs[j];
-try{var pr=PR.replace('{L}',src)+(cx?' Contexte de l’œuvre (respecte-le pour le ton et les noms) : '+cx:'');var txt=await callGemini(apiKey,model,pr,await blobOf(c));paint(c,parse(txt))}
-catch(e){if(e&&(e.code==='blocked'||e.code==='format')){blockWhy=e.msg;if(fails.indexOf(label)<0)fails.push(label)}else throw e}
-out.push(await pack(c));c.width=c.height=0}
-return out}
-
-async function run(){
-var apiKey=$('apikey').value.trim();
-if(!apiKey){say('Entre ta clé API Gemini.');return}
-if(busy)return;
-busy=true;stopF=false;
-var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?4:1;
-GAP=fast?300:(model.indexOf('lite')>=0?4500:6500);
-if(!resume){res=[];fails=[];$('out').innerHTML=''}
-$('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
-var items=[];
-if(pdfDoc){var a=Math.max(1,+$('p1').value||1),b=Math.min(pdfDoc.numPages,+$('p2').value||a);for(var p=a;p<=b;p++)items.push({p:p})}
-else imgs.forEach(function(f,i){items.push({f:f,n:i+1})});
-var start=resume?Math.min(pending.i,items.length):0;pending=null;
-var next=start,flush=start,done={},fatal=null,t0=Date.now(),wl=null;try{wl=await navigator.wakeLock.request('screen')}catch(e){}
-try{await document.fonts.load(FONT)}catch(e){}
-function show(){while(done[flush]){var lb=items[flush].p||items[flush].n;done[flush].forEach(function(u){res.push(u.f);var im=new Image();im.src=u.t;im.loading='lazy';im.alt='Page '+lb;$('out').appendChild(im)});delete done[flush];flush++}
-var d=flush-start,tot=items.length-start,eta=d?Math.round((Date.now()-t0)/d*(tot-d)/60000):0;
-$('st').textContent='Traduction : '+d+' / '+tot+' pages terminées'+(d&&d<tot?' · environ '+Math.max(1,eta)+' min restantes':'')+'...'}
-async function worker(){while(!stopF&&!fatal){var i=next++;if(i>=items.length)return;
-try{done[i]=await doItem(items[i],items[i].p||items[i].n,apiKey,model,src);show()}catch(e){fatal=fatal||e;return}}}
-$('st').textContent='Traduction en cours...';
-var ws=[];for(var w=0;w<conc;w++)ws.push(worker());
-await Promise.all(ws);
-var n=res.length+' page'+(res.length>1?'s':'');
-if(fatal){pending={i:flush};say(msgFor(fatal));$('st').textContent=n+' traduite'+(res.length>1?'s':'')+'.'}
-else if(stopF&&flush<items.length){pending={i:flush};$('st').textContent='Arrêté : '+n+'. Touche « Reprendre » pour continuer.'}
-else $('st').textContent='Terminé : '+n+'.';
-if(!fatal&&fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+' (raison : '+blockWhy+'). Relance-les en réglant « De la page » et « À la page ».');
-try{wl&&wl.release()}catch(e){}
-$('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
-
-async function loadModels(){
-var k=$('apikey').value.trim();if(!k)return null;
-var r;try{r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':k}})}catch(n){throw{code:'network',msg:'Connexion impossible vers Google : '+(n&&n.message?n.message:'')}}
-if(!r.ok){var t='';try{t=await r.text()}catch(e){}throw{code:(r.status===400||r.status===401||r.status===403)?'key':'http',status:r.status,msg:errMsg(t)}}
-var d=await r.json(),ms=(d.models||[]).filter(function(m){return (m.supportedGenerationMethods||[]).join().indexOf('generateContent')>=0&&/flash/i.test(m.name)&&!/image|tts|live|audio|native|embed|robotics|computer|latest/i.test(m.name)}).map(function(m){return m.name.replace('models/','')});
-function ver(n){var x=n.match(/gemini-(\d+(?:\.\d+)?)/);return x?parseFloat(x[1]):0}
-ms.sort(function(a,b){return ver(b)-ver(a)||(/preview|exp/.test(a)?1:0)-(/preview|exp/.test(b)?1:0)||(/lite/.test(a)?1:0)-(/lite/.test(b)?1:0)||(a<b?-1:1)});
-if(ms.length)fillModels(ms);
-return ms}
-function fillModels(ms){var sel=$('mdl'),keep='';try{keep=localStorage.getItem('gemini_model')||''}catch(e){}
-sel.innerHTML=ms.map(function(m,i){return '<option value="'+m+'">'+m+(i===0?' (recommandé)':'')+(/lite/.test(m)?' · léger':'')+'</option>'}).join('');
-if(keep&&ms.indexOf(keep)>=0)sel.value=keep}
-$('mdl').onchange=function(){try{localStorage.setItem('gemini_model',this.value)}catch(e){}};
-$('test').onclick=async function(){
-var k=$('apikey').value.trim(),o=$('tres');
-if(!k){o.textContent='Colle d’abord ta clé API ci-dessus.';return}
-o.textContent='Étape 1 : vérification de la clé...';
-var ms;try{ms=await loadModels()}catch(e){o.textContent='✗ Étape 1 (clé) : '+msgFor(e);return}
-if(!ms||!ms.length){o.textContent='✗ Clé valide, mais aucun modèle Flash n’est disponible pour ce projet.';return}
-var model=$('mcus').value.trim()||$('mdl').value;
-o.textContent='✓ Clé valide ('+ms.length+' modèles Flash trouvés). Étape 2 : test de '+model+'...';
-try{var c=document.createElement('canvas');c.width=260;c.height=90;var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,260,90);x.fillStyle='#000';x.font='bold 48px sans-serif';x.fillText('HELLO',24,62);
-var t=await gen(k,model,[{text:'Quel mot est écrit sur cette image ? Réponds par ce seul mot.'},{inline_data:{mime_type:'image/jpeg',data:await b64of(await blobOf(c))}}],false);
-o.textContent='✓ Tout fonctionne avec '+model+' : l’IA a lu « '+t.trim().slice(0,40)+' ». Tu peux traduire.'}
-catch(e){o.textContent='✗ Étape 2 (modèle '+model+') : '+msgFor(e)}};
-if($('apikey').value.trim())loadModels().catch(function(){});
-
-$('go').onclick=run;
-$('stop').onclick=function(){stopF=true};
-
-$('dl').onclick=async function(){
-try{
-var J=window.jspdf.jsPDF,doc=null;
-for(var i=0;i<res.length;i++){var im=new Image();im.src=res[i];await im.decode();var w=im.naturalWidth,h=im.naturalHeight;
-if(!doc)doc=new J({unit:'px',format:[w,h],orientation:w>h?'l':'p',hotfixes:['px_scaling']});else doc.addPage([w,h],w>h?'l':'p');
-doc.addImage(res[i],'JPEG',0,0,w,h)}
-var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download='manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);say('PDF enregistré.')
-}catch(err){say('Le PDF n’a pas pu être créé.')}};
 </script>
 </body>
 </html>
