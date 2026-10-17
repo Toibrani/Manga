@@ -35,7 +35,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <body>
 <main>
 <h1>MANGA FR</h1>
-<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 8</b></p>
+<p class="mut">Traduis tes mangas et webtoons avec l’API Gemini. <b>Version 11</b></p>
 
 <div class="card">
 <div class="mut">Clé API Gemini</div>
@@ -46,17 +46,18 @@ button:focus-visible,select:focus-visible,input:focus-visible,label:focus-within
 <div class="mut" style="font-size:.8rem;margin-top:4px">Sauvegardée seulement sur cet appareil.</div><button class="btn alt" id="test">Tester ma clé et le modèle</button><div class="mut" id="tres" style="margin-top:8px"></div>
 </div>
 
-<label class="drop" for="f"><span id="fl">Choisir un PDF ou des images</span><br><span class="mut">Un PDF, ou plusieurs images</span></label>
+<label class="drop" for="f"><span id="fl">Choisir un PDF ou des images</span><br><span class="mut">Un PDF (même une page web entière enregistrée en PDF), ou plusieurs images</span></label>
 <input id="f" type="file" accept="application/pdf,image/*" multiple hidden>
 <div class="card" id="rg" hidden><div class="g"><div><div class="mut">De la page</div><input id="p1" type="number" min="1" value="1"></div><div><div class="mut">À la page</div><input id="p2" type="number" min="1" value="5"></div></div><div class="mut" id="pn" style="margin-top:6px"></div></div>
 <div class="card"><div class="g"><div><div class="mut">Langue d’origine</div><select id="src"><option value="anglais">Anglais</option><option value="japonais">Japonais</option><option value="coréen">Coréen</option><option value="chinois">Chinois</option><option value="détectée automatiquement (ignore les textes déjà en français)">Auto</option></select></div><div><div class="mut">Effacement</div><select id="mg"><option value="0">Serré</option><option value="1" selected>Moyen</option><option value="2">Large</option></select></div></div>
-<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select><input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px"></div><div style="margin-top:10px"><div class="mut">Vitesse</div><select id="spd"><option value="safe">Compte gratuit (environ 1 à 2 min pour 36 pages)</option><option value="fast">Compte payant : turbo (environ 15 à 40 s)</option></select></div><div style="margin-top:10px"><div class="mut">Pages envoyées par requête</div><select id="bat"><option value="1">1 (plus précis, plus lent)</option><option value="2">2</option><option value="4" selected>4 (recommandé)</option><option value="6">6 (le plus rapide)</option></select></div>
+<div style="margin-top:10px"><div class="mut">Modèle</div><select id="mdl"><option value="gemini-3.8-flash">gemini-3.8-flash</option></select><input id="mcus" type="text" placeholder="Autre modèle (facultatif)" style="margin-top:8px"></div><div style="margin-top:10px"><div class="mut">Vitesse</div><select id="spd"><option value="safe">Compte gratuit (environ 1 à 2 min pour 36 pages)</option><option value="fast">Compte payant : turbo (environ 15 à 40 s)</option></select></div><div style="margin-top:10px"><div class="mut">Pages envoyées par requête</div><select id="bat"><option value="1">1 (plus précis, plus lent)</option><option value="2">2</option><option value="4" selected>4 (recommandé)</option><option value="6">6 (le plus rapide)</option></select></div><div style="margin-top:10px"><div class="mut">Qualité des images</div><select id="qlt"><option value="1000">Standard (rapide)</option><option value="1400">Haute (plus lent)</option></select></div>
 <div style="margin-top:10px"><div class="mut">Contexte de l’œuvre (facultatif)</div><input id="ctx" type="text" placeholder="Ex : seinen violent, argot de rue, personnages : Kenji, Aya"></div><label class="c"><input type="checkbox" id="up" checked> Texte en majuscules, comme en manga</label></div>
 <button class="btn" id="go" disabled>Traduire</button>
 <button class="btn alt" id="stop" hidden>Arrêter</button>
-<p class="mut">Garde l’appli ouverte et l’écran allumé pendant la traduction.</p><div class="st" id="st"></div>
+<p class="mut">Garde l’appli ouverte et l’écran allumé pendant la traduction.</p><div id="meter" style="display:flex;gap:4px;margin-top:12px"><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span><span style="flex:1;height:14px;border-radius:4px;background:var(--line);opacity:.35"></span></div><div class="mut" id="mnum" style="margin-top:6px">0 / 10</div><div class="st" id="st"></div>
 <div id="out"></div>
 <button class="btn" id="dl" hidden>Télécharger en PDF</button>
+<details class="card"><summary>Journal (pour dépanner)</summary><pre id="log" style="white-space:pre-wrap;font-size:.75rem"></pre><button class="btn alt" id="clog">Copier le journal</button></details>
 <p class="mut" id="msg"></p>
 </main>
 <script>
@@ -64,6 +65,9 @@ function $(i){return document.getElementById(i)}
 var pdfDoc=null,imgs=[],res=[],fails=[],busy=false,stopF=false,pending=null,lastReq=0,GAP=6500,blockWhy='',FONT='700 20px "Comic Neue"';
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
 function say(t){$('msg').textContent=t||''}
+var LOG=[],T0=Date.now(),RW=1000,PREV=1e9;
+function setMeter(k,t){k=Math.max(0,Math.min(10,k));Array.prototype.forEach.call($('meter').children,function(x,i){x.style.background=i<k?'var(--acc)':'var(--line)';x.style.opacity=i<k?1:.35});$('mnum').textContent=t||(k+' / 10')}
+function log(t){LOG.push(((Date.now()-T0)/1000).toFixed(1)+' s : '+t);if(LOG.length>250)LOG.shift();var p=$('log');if(p)p.textContent=LOG.join('\n')}
 
 // Clé API stockée localement
 try{if(localStorage.getItem('gemini_key'))$('apikey').value=localStorage.getItem('gemini_key')}catch(e){}
@@ -82,8 +86,9 @@ else{imgs=a.sort(function(x,y){return x.name<y.name?-1:1});$('fl').textContent=i
 $('go').disabled=!(pdfDoc||imgs.length)};
 
 function blobOf(c){return new Promise(function(r){c.toBlob(r,'image/jpeg',.85)})}
-async function pageCanvas(p){var pg=await pdfDoc.getPage(p),v0=pg.getViewport({scale:1}),v=pg.getViewport({scale:Math.min(2,1000/v0.width)}),c=document.createElement('canvas');c.width=Math.round(v.width);c.height=Math.round(v.height);await pg.render({canvasContext:c.getContext('2d'),viewport:v}).promise;return[c]}
-async function imgCanvases(f){var b=await createImageBitmap(f),sc=Math.min(1,1000/b.width),w=Math.round(b.width*sc),H=Math.round(b.height*sc),sh=Math.round(w*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
+async function pageCanvas(p){var pg=await pdfDoc.getPage(p),v0=pg.getViewport({scale:1}),sc=Math.min(2,RW/v0.width),v=pg.getViewport({scale:sc}),W=Math.round(v.width),H=Math.round(v.height),sh=H<=W*2.2?H:Math.round(W*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
+for(var i=0;i<n;i++){var h=Math.min(sh,H-i*sh),c=document.createElement('canvas');c.width=W;c.height=h;var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,h);await pg.render({canvasContext:x,viewport:v,transform:[1,0,0,1,0,-i*sh]}).promise;o.push(c)}return o}
+async function imgCanvases(f){var b=await createImageBitmap(f),sc=Math.min(1,RW/b.width),w=Math.round(b.width*sc),H=Math.round(b.height*sc),sh=Math.round(w*1.5),n=Math.max(1,Math.ceil(H/sh)),o=[];
 for(var i=0;i<n;i++){var h=Math.min(sh,H-i*sh),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(b,0,i*sh/sc,b.width,h/sc,0,0,w,h);o.push(c)}return o}
 
 function parse(t){
@@ -129,7 +134,7 @@ if(json)payload.generationConfig.responseMimeType='application/json';
 function setThink(){delete payload.generationConfig.thinkingConfig;if(/gemini-3/.test(model))payload.generationConfig.thinkingConfig={thinkingLevel:'low'};else if(/2\.5/.test(model))payload.generationConfig.thinkingConfig={thinkingBudget:0}}
 setThink();
 var waits=[15000,25000,40000,60000,90000],n429=0,fixes=0;
-function swap(why){var nx=nextModel(model);if(!nx)return false;model=nx;OVR=nx;setThink();n429=0;say('Bascule automatique sur '+nx+' ('+why+').');try{$('mdl').value=nx}catch(e){}return true}
+function swap(why){var nx=nextModel(model);if(!nx)return false;model=nx;OVR=nx;setThink();n429=0;say('Bascule automatique sur '+nx+' ('+why+').');log('Bascule sur '+nx+' : '+why);try{$('mdl').value=nx}catch(e){}return true}
 for(;;){
 await pace();
 var url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
@@ -140,7 +145,7 @@ if(resp.status===429||resp.status===503){
 var body='';try{body=await resp.text()}catch(e){}
 if(resp.status===429&&/limit:\s*0/i.test(body)){if(swap('pas de quota gratuit pour ce modèle'))continue;throw{code:'nofree',msg:errMsg(body)}}
 if(resp.status===429&&/PerDay|per day|daily/i.test(body)){if(swap('quota du jour atteint'))continue;throw{code:'daily',msg:errMsg(body)}}
-GAP=Math.min(Math.round(GAP*1.6+1000),30000);
+log('Google a répondu '+resp.status+' ('+model+')');GAP=Math.min(Math.round(GAP*1.6+1000),30000);
 if(n429>=2&&swap('modèle saturé'))continue;
 if(n429>=waits.length)throw{code:resp.status===429?'rate':'busy',msg:errMsg(body)};
 var rd=body.match(/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/),w=Math.max(waits[n429],rd?Math.ceil(parseFloat(rd[1])*1000)+1000:0);n429++;
@@ -170,12 +175,12 @@ if(c==='network')return m||'Connexion impossible.';
 if(c==='rate'||c==='busy')return 'Google limite fortement ton compte en ce moment, même après plusieurs essais. Passe en mode « Prudent », choisis un modèle « lite » dans la liste, attends 5 minutes puis touche « Reprendre ». '+m;
 if(c==='blocked')return 'Réponse bloquée par Google : '+m;
 return 'Erreur'+(e&&e.status?' Google '+e.status:'')+' : '+(m||'inconnue')}
-async function pack(c){
-var f=await new Promise(function(r){c.toBlob(r,'image/jpeg',.88)});
-var t=document.createElement('canvas'),k=Math.min(1,520/c.width);t.width=Math.max(1,Math.round(c.width*k));t.height=Math.max(1,Math.round(c.height*k));
+async function pack(c,th){
+var f=await new Promise(function(r){c.toBlob(r,'image/jpeg',.88)}),url=null;
+if(th){var t=document.createElement('canvas'),k=Math.min(1,520/c.width);t.width=Math.max(1,Math.round(c.width*k));t.height=Math.max(1,Math.round(c.height*k));
 t.getContext('2d').drawImage(c,0,0,t.width,t.height);
-var tb=await new Promise(function(r){t.toBlob(r,'image/jpeg',.8)});t.width=t.height=0;
-return{f:f,t:URL.createObjectURL(tb)}}
+var tb=await new Promise(function(r){t.toBlob(r,'image/jpeg',.8)});t.width=t.height=0;url=URL.createObjectURL(tb)}
+return{f:f,t:url}}
 function parseBatch(t,n){
 var v=parse(t),out=new Array(n);
 if(v.length&&v.every(function(x){return x&&typeof x==='object'&&('items' in x||'image' in x)})){
@@ -185,22 +190,30 @@ return out}
 function buildPrompt(n,src,cx){
 var base=PR.split(' Réponds uniquement')[0].replace('{L}',src);
 return base+(cx?' Contexte de l’œuvre (respecte-le pour le ton et les noms) : '+cx+'.':'')+' Je te donne '+n+' image'+(n>1?'s':'')+', chacune précédée de son numéro (« Image 1 : », etc.). Les rectangles sont relatifs à l’image concernée. Réponds uniquement avec un tableau JSON, une entrée par image, même si elle n’a aucun texte : [{"image":1,"items":[{"box":[ymin,xmin,ymax,xmax],"fr":"traduction"}]}].'}
-async function doTask(task,apiKey,model,src){
+async function doTask(task,apiKey,model,src,ti){
 var cx=($('ctx').value||'').trim(),units=[];
-for(var q=0;q<task.length;q++){var cs=task[q].p?await pageCanvas(task[q].p):await imgCanvases(task[q].f);cs.forEach(function(c){units.push({c:c,q:q})})}
+for(var q=0;q<task.length;q++){var cs=task[q].p?await pageCanvas(task[q].p):await imgCanvases(task[q].f);
+for(var z=0;z<cs.length;z++){units.push({b:await blobOf(cs[z]),q:q});cs[z].width=cs[z].height=0}}
+log('Lot '+(ti+1)+' : '+units.length+' image(s) prête(s)');
 var got=new Array(units.length);
 async function ask(list){
-var parts=[{text:buildPrompt(list.length,src,cx)}];
-for(var k=0;k<list.length;k++){parts.push({text:'Image '+(k+1)+' :'});parts.push({inline_data:{mime_type:'image/jpeg',data:await b64of(await blobOf(units[list[k]].c))}})}
+var t1=Date.now(),parts=[{text:buildPrompt(list.length,src,cx)}];
+for(var k=0;k<list.length;k++){parts.push({text:'Image '+(k+1)+' :'});parts.push({inline_data:{mime_type:'image/jpeg',data:await b64of(units[list[k]].b)}})}
+log('Lot '+(ti+1)+' : envoi de '+list.length+' image(s)');
 var arr=parseBatch(await gen(apiKey,model,parts,true),list.length);
+log('Lot '+(ti+1)+' : réponse en '+((Date.now()-t1)/1000).toFixed(1)+' s');
 list.forEach(function(u,k){if(arr[k])got[u]=arr[k]})}
-var all=units.map(function(_,i){return i});
-try{await ask(all)}catch(e){if(!(e&&(e.code==='blocked'||e.code==='format')))throw e}
+function soft(e){if(!(e&&(e.code==='blocked'||e.code==='format')))throw e;log('Lot '+(ti+1)+' : réponse inutilisable ('+(e.msg||e.code)+')')}
+var all=units.map(function(_,i){return i}),groups=[];for(var g=0;g<all.length;g+=6)groups.push(all.slice(g,g+6));
+await Promise.all(groups.map(function(l){return ask(l).catch(soft)}));
 for(var u=0;u<units.length;u++){if(got[u])continue;
 try{await ask([u])}catch(e){if(e&&(e.code==='blocked'||e.code==='format')){var lb=task[units[u].q].p||task[units[u].q].n;blockWhy=e.msg;if(fails.indexOf(lb)<0)fails.push(lb);got[u]=[]}else throw e}
 if(!got[u])got[u]=[]}
 var outs=task.map(function(it){return{label:it.p||it.n,packs:[]}});
-for(var u2=0;u2<units.length;u2++){paint(units[u2].c,got[u2]||[]);outs[units[u2].q].packs.push(await pack(units[u2].c));units[u2].c.width=units[u2].c.height=0}
+for(var u2=0;u2<units.length;u2++){
+var bm=await createImageBitmap(units[u2].b),c=document.createElement('canvas');c.width=bm.width;c.height=bm.height;c.getContext('2d').drawImage(bm,0,0);if(bm.close)bm.close();
+paint(c,got[u2]||[]);outs[units[u2].q].packs.push(await pack(c,(task[units[u2].q].idx||0)<PREV));c.width=c.height=0;units[u2].b=null}
+log('Lot '+(ti+1)+' : terminé');
 return outs}
 
 async function run(){
@@ -208,32 +221,35 @@ var apiKey=$('apikey').value.trim();
 if(!apiKey){say('Entre ta clé API Gemini.');return}
 if(busy)return;
 busy=true;stopF=false;
-var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?8:3,B=resume?pending.b:(+$('bat').value||4);
-GAP=fast?200:(model.indexOf('lite')>=0?4500:6500);OVR='';TRIED=[];try{if(!MODELS.length)await loadModels()}catch(e){}
+var resume=!!pending,model=$('mcus').value.trim()||$('mdl').value,src=$('src').value,fast=$('spd').value==='fast',conc=fast?24:3,B=resume?pending.b:(+$('bat').value||4);
+GAP=fast?150:(model.indexOf('lite')>=0?4500:6500);OVR='';TRIED=[];try{if(!MODELS.length)await loadModels()}catch(e){}
+if(fast&&!resume)B=Math.min(B,3);T0=Date.now();LOG=[];log('Départ : '+model+', mode '+(fast?'turbo':'gratuit')+', '+B+' page(s) par requête, '+conc+' requête(s) en parallèle');
 if(!resume){res=[];fails=[];$('out').innerHTML=''}
 $('dl').hidden=true;$('go').disabled=true;$('stop').hidden=false;say('');
 var items=[];
 if(pdfDoc){var a=Math.max(1,+$('p1').value||1),b=Math.min(pdfDoc.numPages,+$('p2').value||a);for(var p=a;p<=b;p++)items.push({p:p})}
 else imgs.forEach(function(f,i){items.push({f:f,n:i+1})});
+items.forEach(function(it,i){it.idx=i});RW=+$('qlt').value||1000;setMeter(0);
 var tasks=[];for(var q=0;q<items.length;q+=B)tasks.push(items.slice(q,q+B));
 var start=resume?Math.min(pending.i,tasks.length):0;pending=null;
 var next=start,flush=start,done={},fatal=null,t0=Date.now(),wl=null,pg=0,total=0;
 for(var z=start;z<tasks.length;z++)total+=tasks[z].length;
+PREV=items.length<=40?1e9:6;
 try{wl=await navigator.wakeLock.request('screen')}catch(e){}
 try{await document.fonts.load(FONT)}catch(e){}
 function tm(sec){return sec<90?sec+' s':Math.round(sec/60)+' min'}
-function show(){while(done[flush]){done[flush].forEach(function(o){o.packs.forEach(function(u){res.push(u.f);var im=new Image();im.src=u.t;im.loading='lazy';im.alt='Page '+o.label;$('out').appendChild(im)});pg++});delete done[flush];flush++}
-var eta=pg?Math.round((Date.now()-t0)/pg*(total-pg)/1000):0;
+function show(){while(done[flush]){done[flush].forEach(function(o){o.packs.forEach(function(u){res.push(u.f);if(u.t){var im=new Image();im.src=u.t;im.loading='lazy';im.alt='Page '+o.label;$('out').appendChild(im)}});pg++});delete done[flush];flush++}
+setMeter(Math.floor(pg/Math.max(1,total)*10));var eta=pg?Math.round((Date.now()-t0)/pg*(total-pg)/1000):0;
 $('st').textContent='Traduction : '+pg+' / '+total+' pages terminées'+(pg&&pg<total?' · environ '+tm(Math.max(1,eta))+' restantes':'')+'...'}
 async function worker(){while(!stopF&&!fatal){var i=next++;if(i>=tasks.length)return;
-try{done[i]=await doTask(tasks[i],apiKey,model,src);show()}catch(e){fatal=fatal||e;return}}}
+try{done[i]=await doTask(tasks[i],apiKey,model,src,i);show()}catch(e){log('Erreur : '+(e&&(e.code||e.message)||'inconnue')+' '+(e&&e.msg||''));fatal=fatal||e;return}}}
 $('st').textContent='Traduction en cours...';
 var ws=[];for(var w=0;w<conc;w++)ws.push(worker());
 await Promise.all(ws);
 var n=res.length+' page'+(res.length>1?'s':'');
 if(fatal){pending={i:flush,b:B};say(msgFor(fatal));$('st').textContent=n+' traduite'+(res.length>1?'s':'')+'.'}
 else if(stopF&&flush<tasks.length){pending={i:flush,b:B};$('st').textContent='Arrêté : '+n+'. Touche « Reprendre » pour continuer.'}
-else $('st').textContent='Terminé : '+n+' en '+tm(Math.round((Date.now()-t0)/1000))+'.';
+else{$('st').textContent='Terminé : '+n+' en '+tm(Math.round((Date.now()-t0)/1000))+'.';setMeter(10,'10 / 10 : tout est traduit');if(total>40)$('out').insertAdjacentHTML('beforeend','<p class="mut">Aperçu des 6 premières pages. Télécharge le PDF pour avoir toutes les pages.</p>')}
 if(!fatal&&fails.length)say('Pages non traduites (bloquées ou en erreur) : '+fails.join(', ')+' (raison : '+blockWhy+'). Relance-les en réglant « De la page » et « À la page ».');
 try{wl&&wl.release()}catch(e){}
 $('dl').hidden=!res.length;setGo();busy=false;$('go').disabled=false;$('stop').hidden=true}
@@ -265,16 +281,20 @@ o.textContent='✓ Tout fonctionne avec '+model+' : l’IA a lu « '+t.trim().sl
 catch(e){o.textContent='✗ Étape 2 (modèle '+model+') : '+msgFor(e)}};
 if($('apikey').value.trim())loadModels().catch(function(){});
 
+$('clog').onclick=function(){var t=LOG.join('\n');try{navigator.clipboard.writeText(t).then(function(){say('Journal copié.')},function(){say('Copie impossible : sélectionne le texte du journal à la main.')})}catch(e){say('Copie impossible : sélectionne le texte du journal à la main.')}};
 $('go').onclick=run;
 $('stop').onclick=function(){stopF=true};
 
 $('dl').onclick=async function(){
-try{say('Création du PDF...');var J=window.jspdf.jsPDF,doc=null;
-for(var i=0;i<res.length;i++){var bm=await createImageBitmap(res[i]),w=bm.width,h=bm.height;if(bm.close)bm.close();
+try{var J=window.jspdf.jsPDF,PART=120,np=Math.ceil(res.length/PART);
+for(var pt=0;pt<np;pt++){var doc=null,from=pt*PART,to=Math.min(res.length,from+PART);
+for(var i=from;i<to;i++){say('Création du PDF'+(np>1?' (partie '+(pt+1)+'/'+np+')':'')+' : '+(i+1)+' / '+res.length);
+var bm=await createImageBitmap(res[i]),w=bm.width,h=bm.height;if(bm.close)bm.close();
 var du=await new Promise(function(ok,ko){var r=new FileReader();r.onload=function(){ok(r.result)};r.onerror=ko;r.readAsDataURL(res[i])});
 if(!doc)doc=new J({unit:'px',format:[w,h],orientation:w>h?'l':'p',hotfixes:['px_scaling'],compress:true});else doc.addPage([w,h],w>h?'l':'p');
-doc.addImage(du,'JPEG',0,0,w,h);du=null;say('Création du PDF : '+(i+1)+' / '+res.length)}
-var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download='manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);say('PDF enregistré.')
+doc.addImage(du,'JPEG',0,0,w,h);du=null}
+var u=URL.createObjectURL(doc.output('blob')),a=document.createElement('a');a.href=u;a.download=np>1?'manga-fr-partie-'+(pt+1)+'.pdf':'manga-fr.pdf';document.body.appendChild(a);a.click();document.body.removeChild(a);doc=null;await sleep(1200)}
+say(np>1?np+' PDF enregistrés (120 pages chacun).':'PDF enregistré.')
 }catch(err){say('Le PDF n’a pas pu être créé : '+(err&&err.message?err.message:'erreur inconnue'))}};
 </script>
 </body>
